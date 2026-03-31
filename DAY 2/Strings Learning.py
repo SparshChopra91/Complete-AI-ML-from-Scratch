@@ -7,4 +7,4 @@ pyttsx3.speak(first_name)
 pyttsx3.speak("the shorter name is ")
 print(short_name)
 pyttsx3.speak(short_name)
-
+print(first_name)
