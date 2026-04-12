@@ -1,0 +1,5 @@
+cd "F:\Learning\AI ML Learn from Scratch"
+git status
+git add .
+git commit -m "Day 6: Completed the pratice set of loops  "
+git push origin main

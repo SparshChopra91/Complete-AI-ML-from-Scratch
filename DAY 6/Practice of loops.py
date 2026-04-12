@@ -52,7 +52,6 @@ for i in range(0,num) :
     print("\n")
 print("\n done")
 
-"""
 
 # star pattern second
 num = int(input("please enter the rows number to print :-> "))
@@ -61,3 +60,5 @@ for i in range(0,num) :
     print("*" * (((i+1)*2)-1), end="")
     print("\n")
 print("\n done")
+
+"""
