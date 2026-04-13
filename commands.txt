@@ -1,5 +1,5 @@
 cd "F:\Learning\AI ML Learn from Scratch"
 git status
 git add .
-git commit -m "Project 1 : Made the Classic Stone Paper and Scissors Game using python  "
+git commit -m "Project 2 : Made the Guessing the Number game , able to test all the things learned till now  "
 git push origin main
