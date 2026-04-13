@@ -4,10 +4,13 @@ print("Welcome to the\n<------ NUMBER GUESSING GAME -------->")
 print("INSTRUCTIONS\n1.you can select the difficulty level\n2.you have limited number of trials")
 print("3.points will be awarded on the basis of the number of attempts you took")
 print("Select the Difficulty level :-> \n1.Easy---> 10 , range(1-50) trials\n2.Hard---> 5 trials , range(1-100)")
-input_difficulty = input("enter your difficulty level :--------> ")
-if input_difficulty.lower() not in difficulty:
-    print("please enter the valid input\nExisting")
-    exit()
+valid = False
+while(valid == False) :
+    input_difficulty = input("enter your difficulty level :--------> ")
+    if input_difficulty not in difficulty:
+        print("Please enter a valid input :-----x ")
+    else:
+        valid = True
 trials = difficulty[input_difficulty.lower()]
 if (trials == 10) :
     to_guess = random.randint(1,50)
