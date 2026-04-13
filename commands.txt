@@ -1,5 +1,5 @@
 cd "F:\Learning\AI ML Learn from Scratch"
 git status
 git add .
-git commit -m "Day 7: Completed the functions chapter with recurssion  "
+git commit -m "Project 1 : Made the Classic Stone Paper and Scissors Game using python  "
 git push origin main
