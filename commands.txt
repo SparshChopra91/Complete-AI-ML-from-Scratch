@@ -1,5 +1,5 @@
 cd "F:\Learning\AI ML Learn from Scratch"
 git status
 git add .
-git commit -m "Project 2 : Made the Guessing the Number game , able to test all the things learned till now  "
+git commit -m "DAY 8 : Practicing different questions on the file I/O operations  "
 git push origin main
