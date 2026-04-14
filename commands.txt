@@ -1,5 +1,5 @@
 cd "F:\Learning\AI ML Learn from Scratch"
 git status
 git add .
-git commit -m "DAY 8 : Practicing different questions on the file I/O operations  "
+git commit -m "DAY 8 : Completed the complete File I/O problems with a tough ques from chatgpt  "
 git push origin main

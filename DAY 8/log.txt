@@ -1,0 +1,11 @@
+critical: disk full
+info: user logged in
+warning: memory low
+critical: file not found
+info: user logged out
+critical: disk full
+info: database connected
+warning: high latency detected
+critical: permission denied
+info: backup started
+critical: disk full

@@ -87,7 +87,108 @@ print("Done")
 
 
 
+#mine a log file and tell whether it has python word in it or not 
+print("this program will tell that whether the log file has the word the python in it or not")
+try:
+    file = open("F:\\Learning\\AI ML Learn from Scratch\\DAY 8\\file_log.txt" , "r")
+except FileNotFoundError:
+    print("the file dosen't exists at the location you mentioned")
+    exit()
+word = "python"
+found = False
+words = "."
+while(words != ""):
+    words = file.readline()
+    if word in words.lower():
+        print("yes the word python exists in the file ")
+        found = True
+        break
+if(found is False):
+    print("the word python is not in the file")
+
+
+#Write a program to mine a log file and find out whether it contains ‘python’. 
+#Write a program to find out the line number where python is present from ques 6
+print("this program will tell that whether the log file has the word the python in it or not")
+try:
+    file = open("F:\\Learning\\AI ML Learn from Scratch\\DAY 8\\file_log.txt" , "r")
+except FileNotFoundError:
+    print("the file dosen't exists at the location you mentioned")
+    exit()
+word = "python"
+found = False
+line = 0
+words = "."
+while(words != ""):
+    line += 1
+    words = file.readline()
+    if word in words.lower():
+        pos = words.lower().find("python")
+        print("yes the word python exists in the file at the " + str(line) + " line in the code and at position " + str(pos))
+        found = True
+        break
+if(found is False):
+    print("the word python is not in the file")
+
+    
+
+
 
 """
 
+#🎯 LOG FILE ANALYZER (REAL-WORLD STYLE) tough question to test the logic 
+def maximum(a,b,c):
+    largest = max(a,b,c)
+    final = ""
+    if(a == largest):
+        final = final + "  ERROR  "
+    if(b == largest):
+        final = final + "  INFO  "
+    if(c == largest):
+        final = final + "  WARNING  "
+    return final
+print("this is the x--------LOG FILE ANALYZER PROGRAM----------x ")
+try :
+    file1 = open("F:\\Learning\\AI ML Learn from Scratch\\DAY 8\\log.txt" , "r+")
+except FileNotFoundError:
+    print("the log file dosen't exist at the location you mentioned in the program")
+    exit()
+error_count = 0
+info_count = 0
+warning_count = 0
+lines = []
+line = 0
+words = "."
+while True:
+    words = file1.readline()
+    if (words == ""):
+        break
+    line += 1
+    if("error:" in words.lower()):
+        lines.append(line)
+        error_count += 1
+    if("info:" in words.lower()):
+        info_count += 1
+    if("warning:" in words.lower()):
+        warning_count += 1
+print("Printing the Occurence of each messages")
+print("ERROR messages :-----> " + str(error_count))
+print("INFO messages :-----> " + str(info_count))
+print("WARNING messages :-----> " + str(warning_count))
+print("ERRORS found at the lines " + str(lines))
+print("the most frequent message among all are :---->  " + str(maximum(error_count,info_count,warning_count)) )
+print("now replacing all the error messages with the CRITICAL")
+file1.seek(0)
+words = file1.read()
+file1.seek(0)
+file1.truncate()
+words = words.lower().replace("error:" , "critical:")
+file1.write(words)
+print("done all the error messages had been converted to the critical word")
+file1.close()
+file2 = open("F:\\Learning\\AI ML Learn from Scratch\\DAY 8\\log_results.txt" , "w")
+words = ("Total lines: " + str(line) + "\nERROR count: " + str(error_count) + "\nINFO count: " + str(info_count) +  "\nWARNING count: " + str(warning_count))
+file2.write(str(words))
+print("the contents had been written into a new file ")
+file2.close()
 

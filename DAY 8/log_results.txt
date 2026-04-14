@@ -1,0 +1,4 @@
+Total lines: 11
+ERROR count: 5
+INFO count: 4
+WARNING count: 2
