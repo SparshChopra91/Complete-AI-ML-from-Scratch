@@ -1,5 +1,5 @@
 cd "F:\Learning\AI ML Learn from Scratch"
 git status
 git add .
-git commit -m "DAY 10 : Completed the Inheritance and more on OOPS chapter with 2 tough ques from chatgpt  "
+git commit -m "Advanced Python 1 : Completed the Advanced python 1 , learned many new things that came to the python  "
 git push origin main
