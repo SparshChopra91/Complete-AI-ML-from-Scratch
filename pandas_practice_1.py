@@ -64,18 +64,22 @@ dataset.drop(dataset[dataset['Patient_ID'] == 'ABC'].index , inplace=True)
 print(dataset)
 
 
+sorted_dataset = dataset.sort_values('Danger zone')
+print(sorted_dataset)
+
+sorted_dataset_desc = dataset.sort_values(('Danger zone') , ascending=False)
+print(sorted_dataset_desc)
+
+
+
 """
-
-
-
 
 dataset['danger zone'] = (dataset['BP'] * 0.4) + (dataset['Sugar'] * 0.3) + (dataset['Cholesterol'] * 0.3)
 print(dataset)
 
 dataset.rename(columns={'danger zone' : 'Danger zone'} , inplace=True)
 
-sorted_dataset = dataset.sort_values('Danger zone')
-print(sorted_dataset)
-
-sorted_dataset_desc = dataset.sort_values(('Danger zone') , ascending=False)
-print(sorted_dataset_desc)
+dataset['Need care?'] = np.where((dataset['Danger zone'] > 160) , 'Yes immediately' , 'Not needed')
+print(dataset)
+sorted_dataset =  dataset.sort_values('Need care?' , ascending=False)
+print(sorted_dataset[['Patient_ID' , 'Danger zone' , 'Need care?']]) 
