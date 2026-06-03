@@ -14,6 +14,9 @@ patients = np.array([
 [8,   40,  118, 70, 100,   175]
 ])
 
+"""
+
+
 
 print("the shape of the original matrix is :- " , patients.shape)
 # cleaning of the data
@@ -52,8 +55,44 @@ print("the shape of the new risk factor array is :- " , risk_score.shape)
 final_patients = np.hstack((patients , risk_score))
 print("the final patients matrix with the risk factor included are :-  " , final_patients)
 
+
 #find all the patients whose bp is above average
 average_bp = np.mean(patients[:,2] , axis=0)
-above_average_bp = np.where((patients[:,2] > average_bp))
-print("the shape of the above matrix " , above_average_bp.shape)
-print("the matrix of the patients whose bp is above average are :- " , patients[above_average_bp][:,0])
+print("the average bp of the people are :- " + str(average_bp))
+where_condition = np.where(patients[:,2] > average_bp)
+print("the patients having the bp above average are :- " , patients[where_condition][:,0])
+
+
+# replace the cholesterol above 250 to danger level
+cholestrol_where = np.where((patients[:,5] > 250) , "Danger" , "ok")
+print("the level of the cholestrol in the danger level are:-  " , cholestrol_where)
+print("the shape of the cholestrol level are :- " , cholestrol_where.shape)
+reshaped_cholesterol_where = cholestrol_where.reshape(8,1)
+cholestrol_level_list = np.hstack((patients , reshaped_cholesterol_where))
+print("the full and final list of the patients with the cholesterol level are :- \n " , cholestrol_level_list[:,(0,6)])
+
+
+
+"""
+
+
+#creating a label by checking the risk score
+#creating a new feature called the risk score 
+risk_score_old = np.array(((patients[:,1] * 0.4)) + (patients[:,4] * 0.3) + (patients[:,5] * 0.3) ) 
+risk_score = risk_score_old.reshape(8,1)
+
+print("the risk score array newly created is :- " , risk_score)
+print("the shape of the new risk factor array is :- " , risk_score.shape)
+patients_risk_score = np.hstack((patients , risk_score))
+print("the array created with the risk score of the each patient are :-  \n" , patients_risk_score)
+# if more than 130 then heart disease risk is seen 
+
+risk_where = np.where(patients_risk_score[:,6] > 130 , "Yes" , "No")
+reshaped_risk_where = risk_where.reshape(8,1)
+risk_patients = np.hstack((patients_risk_score , reshaped_risk_where))
+print("the patients with the high chances of heart disease are :-  " , risk_patients)
+
+
+ 
+
+
