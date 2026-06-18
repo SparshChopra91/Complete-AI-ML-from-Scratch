@@ -1,7 +1,7 @@
 cd "F:\Learning\AI ML Learn from Scratch"
 git status
 git add .
-git commit -m "Advanced Python 1 : Completed the Advanced python 1 , learned many new things that came to the python  "
+git commit -m "Jarvis : Still i a lot work to do on this will do after exams  "
 git push origin main
 
 
