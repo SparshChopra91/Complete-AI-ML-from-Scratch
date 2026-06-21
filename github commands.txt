@@ -13,7 +13,8 @@ git push origin main
 dynamic array (vectors) yet to be studied 
 class objects in c++ need to be studied 
 
-
+git fetch origin
+git rebase origin/main
 cd "F:\Learning\AI ML Learn from Scratch"
 git status
 git add .
