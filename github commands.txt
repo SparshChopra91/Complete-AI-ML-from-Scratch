@@ -17,5 +17,5 @@ class objects in c++ need to be studied
 cd "F:\Learning\AI ML Learn from Scratch"
 git status
 git add .
-git commit -m "update  "
+git commit -m "CSIO Project "
 git push origin main
