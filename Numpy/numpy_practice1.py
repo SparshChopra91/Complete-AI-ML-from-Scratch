@@ -53,7 +53,7 @@ test_array_2 = np.array([1,2,3,4,5,6,7,8,9,10])
 even_numbers = test_array_2[test_array_2 % 2 != 0]
 print(even_numbers)
 
-
+this was the practice of the Numpy Full
 """
 
 test_array = np.array([[1,5] , [2,3] , [5,1]])
