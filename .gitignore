@@ -4,3 +4,7 @@ my_new_venv/
 jarvis_env/
 __pycache__/
 *.pyc
+*.pkl
+*.csv
+*.env
+.env

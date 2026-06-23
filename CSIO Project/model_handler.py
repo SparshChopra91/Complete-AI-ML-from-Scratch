@@ -27,7 +27,8 @@ try :
     print("✅ Tier 1 Model loaded successfully")
 except FileNotFoundError:
     print("⚠️  Tier 1 Model file not found. Training a new model...")
-    Tier1_model = RandomForestClassifier(n_estimators=10000)
+    Tier1_model = RandomForestClassifier(n_estimators=700 ,
+                                          max_depth=5)
     Tier1_model.fit(x_train,y_train)
     joblib.dump(Tier1_model , "Tier1_model_trained.pkl")
     print("✅ Tier 1 Model Trained and saved Successfully")
@@ -104,7 +105,7 @@ try :
     print("✅ Tier 2 Model loaded successfully")
 except FileNotFoundError :
     print("⚠️  Tier 2 Model file not found. Training a new model...")
-    tier2_model = RandomForestClassifier(n_estimators=10000)
+    tier2_model = RandomForestClassifier(n_estimators=700 , max_depth=5)
     tier2_model.fit(x2_train,y2_train)
     joblib.dump( tier2_model, "Tier2_model_trained.pkl")
     print("✅ Tier 2 Model trained and saved successfully")
