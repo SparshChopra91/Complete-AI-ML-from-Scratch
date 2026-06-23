@@ -18,6 +18,7 @@ class objects in c++ need to be studied
 .venv\Scripts\activate
 git fetch origin
 git rebase origin/main
+
 cd "F:\Learning\AI ML Learn from Scratch"
 git status
 git add .
