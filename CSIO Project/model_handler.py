@@ -23,14 +23,14 @@ x_test['trestbps'] = x_test['trestbps'].fillna(trestbps_meadian )
 #print("the unique values in the y are :- " , y.unique())
 
 try :
-    Tier1_model = joblib.load("Tier1_model_trained.pkl")
+    Tier1_model = joblib.load("F:\\Learning\\AI ML Learn from Scratch\\CSIO Project\\Tier1_model_trained.pkl")
     print("✅ Tier 1 Model loaded successfully")
 except FileNotFoundError:
     print("⚠️  Tier 1 Model file not found. Training a new model...")
     Tier1_model = RandomForestClassifier(n_estimators=700 ,
                                           max_depth=5)
     Tier1_model.fit(x_train,y_train)
-    joblib.dump(Tier1_model , "Tier1_model_trained.pkl")
+    joblib.dump(Tier1_model , "F:\\Learning\\AI ML Learn from Scratch\\CSIO Project\\Tier1_model_trained.pkl")
     print("✅ Tier 1 Model Trained and saved Successfully")
 
 
@@ -101,13 +101,13 @@ x2_train['thalch'] = x2_train['thalch'].fillna(thalch_median)
 x2_test['thalch'] = x2_test['thalch'].fillna(thalch_median)
 
 try :
-    tier2_model = joblib.load("Tier2_model_trained.pkl")
+    tier2_model = joblib.load("F:\\Learning\\AI ML Learn from Scratch\\CSIO Project\\Tier2_model_trained.pkl")
     print("✅ Tier 2 Model loaded successfully")
 except FileNotFoundError :
     print("⚠️  Tier 2 Model file not found. Training a new model...")
     tier2_model = RandomForestClassifier(n_estimators=700 , max_depth=5)
     tier2_model.fit(x2_train,y2_train)
-    joblib.dump( tier2_model, "Tier2_model_trained.pkl")
+    joblib.dump( tier2_model, "F:\\Learning\\AI ML Learn from Scratch\\CSIO Project\\Tier2_model_trained.pkl")
     print("✅ Tier 2 Model trained and saved successfully")
 
 patient_futher_details = [[1111 , 233 , 1 , 2 , 150]]
