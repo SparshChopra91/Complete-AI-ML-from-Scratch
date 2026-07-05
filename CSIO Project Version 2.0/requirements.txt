@@ -7,5 +7,3 @@ shap
 fpdf
 openai
 google-genai
-dotenv
-matplotlib
