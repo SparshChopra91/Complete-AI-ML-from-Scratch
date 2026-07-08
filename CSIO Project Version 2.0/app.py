@@ -1,7 +1,6 @@
 """
-Smart Clinic Triage Engine — Premium Streamlit Front-End
-=========================================================
-Two-Tier ML Cascade Router + SHAP Explainability + GenAI Clinical Notes.
+Smart Clinic Triage Engine
+Production Streamlit frontend for the two-tier heart disease triage workflow.
 
 Run:
     streamlit run app.py
@@ -10,1439 +9,2062 @@ Run:
 from __future__ import annotations
 
 import os
-import json
-import time
-from dataclasses import dataclass, asdict
 from html import escape
 from pathlib import Path
 from typing import Any
 
+import joblib
 import numpy as np
 import pandas as pd
 import streamlit as st
-import joblib
-
-try:
-    import shap
-except ImportError:
-    shap = None
+import streamlit.components.v1 as components
 
 try:
     import plotly.graph_objects as go
+    import plotly.express as px
+
     HAS_PLOTLY = True
-except ImportError:
+except Exception:
     HAS_PLOTLY = False
 
 try:
+    import shap
+
+    HAS_SHAP = True
+except Exception:
+    shap = None
+    HAS_SHAP = False
+
+try:
     from openai import OpenAI
-except ImportError:
+
+    HAS_OPENAI = True
+except Exception:
     OpenAI = None
+    HAS_OPENAI = False
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
-except ImportError:
+except Exception:
     pass
 
 
-# ╔═══════════════════════════════════════════════════════════════╗
-# ║                     PROJECT CONSTANTS                        ║
-# ╚═══════════════════════════════════════════════════════════════╝
-
-BASE_DIR         = Path(__file__).resolve().parent
-DATA_PATH        = BASE_DIR / "heart_disease_uci.csv"
+BASE_DIR = Path(__file__).resolve().parent
+DATA_PATH = BASE_DIR / "heart_disease_uci.csv"
 TIER1_MODEL_PATH = BASE_DIR / "Tier_1_model.pkl"
 TIER2_MODEL_PATH = BASE_DIR / "Tier_2_model.pkl"
 
-LOW_THRESHOLD  = 0.30
+LOW_THRESHOLD = 0.30
 HIGH_THRESHOLD = 0.70
 
 TIER1_COLS = [
-    "age", "gender_Female", "gender_Male",
-    "cp_asymptomatic", "cp_atypical angina", "cp_non-anginal", "cp_typical angina",
+    "age",
+    "gender_Female",
+    "gender_Male",
+    "cp_asymptomatic",
+    "cp_atypical angina",
+    "cp_non-anginal",
+    "cp_typical angina",
     "trestbps",
 ]
 
-CP_OPTS      = ["asymptomatic", "atypical angina", "non-anginal", "typical angina"]
-SEX_OPTS     = ["Female", "Male"]
-RESTECG_OPTS = ["normal", "st-t abnormality", "lv hypertrophy"]
-RESTECG_MAP  = {"normal": 0, "st-t abnormality": 1, "lv hypertrophy": 2}
-SLOPE_OPTS   = ["downsloping", "flat", "upsloping"]
-SLOPE_MAP    = {"downsloping": 0, "flat": 1, "upsloping": 2}
-THAL_OPTS    = ["fixed defect", "normal", "reversable defect"]
-THAL_MAP     = {"fixed defect": 0, "normal": 1, "reversable defect": 2}
-
-REF_RANGES = {
-    "age":      {"min": 28.0,  "max": 77.0},
-    "trestbps": {"min": 92.0,  "max": 200.0},
-    "chol":     {"min": 85.0,  "max": 603.0},
-    "thalch":   {"min": 60.0,  "max": 202.0},
-    "oldpeak":  {"min": 0.0,   "max": 6.2},
-}
-
-SHAP_LABELS = [
-    "Age", "Gender", "Chest Pain Type", "Resting BP",
-    "Cholesterol", "Fasting Blood Sugar",
-    "Resting ECG", "Max Heart Rate",
+TIER2_FALLBACK_COLS = [
+    "age",
+    "trestbps",
+    "chol",
+    "thalch",
+    "oldpeak",
+    "ca_missing",
+    "chol_missing_or_zero",
+    "oldpeak_missing",
+    "cp_asymptomatic",
+    "cp_atypical angina",
+    "cp_non-anginal",
+    "cp_typical angina",
+    "gender_Female",
+    "gender_Male",
+    "ca_-1.0",
+    "ca_0.0",
+    "ca_1.0",
+    "ca_2.0",
+    "ca_3.0",
+    "restecg_-1.0",
+    "restecg_0.0",
+    "restecg_1.0",
+    "restecg_2.0",
+    "fbs_-1.0",
+    "fbs_0.0",
+    "fbs_1.0",
+    "exang_-1.0",
+    "exang_0.0",
+    "exang_1.0",
+    "slope_-1.0",
+    "slope_0.0",
+    "slope_1.0",
+    "slope_2.0",
+    "thal_-1.0",
+    "thal_0.0",
+    "thal_1.0",
+    "thal_2.0",
 ]
 
+CP_OPTIONS = ["asymptomatic", "atypical angina", "non-anginal", "typical angina"]
+SEX_OPTIONS = ["Female", "Male"]
+RESTECG_OPTIONS = ["normal", "st-t abnormality", "lv hypertrophy"]
+SLOPE_OPTIONS = ["downsloping", "flat", "upsloping"]
+THAL_OPTIONS = ["normal", "fixed defect", "reversable defect"]
 
-# ╔═══════════════════════════════════════════════════════════════╗
-# ║            CSS INJECTION — WARM THEME + SIDE RAYS            ║
-# ╚═══════════════════════════════════════════════════════════════╝
+RESTECG_MAP = {"normal": 0, "st-t abnormality": 1, "lv hypertrophy": 2}
+SLOPE_MAP = {"downsloping": 0, "flat": 1, "upsloping": 2}
+THAL_MAP = {"fixed defect": 0, "normal": 1, "reversable defect": 2}
 
-def inject_css():
-    """Inject the full premium warm-gold theme CSS + SideRays background."""
-    st.markdown("""
-<!-- Google Fonts — Inter -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+FEATURE_LABELS = {
+    "age": "Age",
+    "trestbps": "Resting BP",
+    "chol": "Cholesterol",
+    "thalch": "Max Heart Rate",
+    "oldpeak": "ST Depression",
+    "ca_missing": "Vessels Missing",
+    "chol_missing_or_zero": "Cholesterol Missing",
+    "oldpeak_missing": "Oldpeak Missing",
+    "cp_asymptomatic": "Chest Pain: Asymptomatic",
+    "cp_atypical angina": "Chest Pain: Atypical",
+    "cp_non-anginal": "Chest Pain: Non-anginal",
+    "cp_typical angina": "Chest Pain: Typical",
+    "gender_Female": "Sex: Female",
+    "gender_Male": "Sex: Male",
+    "restecg_0.0": "ECG: Normal",
+    "restecg_1.0": "ECG: ST-T abnormality",
+    "restecg_2.0": "ECG: LV hypertrophy",
+    "fbs_0.0": "Fasting Blood Sugar: No",
+    "fbs_1.0": "Fasting Blood Sugar: Yes",
+    "exang_0.0": "Exercise Angina: No",
+    "exang_1.0": "Exercise Angina: Yes",
+    "slope_0.0": "Slope: Downsloping",
+    "slope_1.0": "Slope: Flat",
+    "slope_2.0": "Slope: Upsloping",
+    "thal_0.0": "Thal: Fixed defect",
+    "thal_1.0": "Thal: Normal",
+    "thal_2.0": "Thal: Reversable defect",
+    "ca_0.0": "Major Vessels: 0",
+    "ca_1.0": "Major Vessels: 1",
+    "ca_2.0": "Major Vessels: 2",
+    "ca_3.0": "Major Vessels: 3",
+}
 
+FALLBACK_RANGES = {
+    "age": {"min": 28.0, "max": 77.0},
+    "trestbps": {"min": 80.0, "max": 200.0},
+    "chol": {"min": 85.0, "max": 603.0},
+    "thalch": {"min": 60.0, "max": 202.0},
+    "oldpeak": {"min": -2.6, "max": 6.2},
+}
+
+
+st.set_page_config(
+    page_title="Smart Clinic Triage Engine",
+    page_icon="SC",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+
+
+def inject_css() -> None:
+    """CSS injection: warm light theme, box-in-box layout, and Side Rays fallback."""
+    st.markdown(
+        """
 <style>
-/* ═══════════════════════════════════════════════════
-   1.  DESIGN TOKENS — Warm Gold + Soft Blue palette
-       Colours inspired by SideRays (EAB308 / 96c8ff)
-   ═══════════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
 :root {
-    --bg-page:         #FFF9F0;
-    --bg-surface:      #FFFFFF;
-    --bg-surface-alt:  #FFFAF3;
-    --bg-inner:        #FFF6EC;
-    --bg-glass:        rgba(255, 255, 255, 0.88);
-
-    --gold-900: #78350F;
-    --gold-700: #B45309;
-    --gold-600: #CA8A04;
-    --gold-500: #EAB308;
-    --gold-400: #FACC15;
-    --gold-300: #FDE68A;
-    --gold-200: #FEF3C7;
-    --gold-100: #FEFCE8;
-    --gold-glow: rgba(234, 179, 8, 0.14);
-
-    --blue-soft: #96C8FF;
-    --blue-500:  #3B82F6;
-    --blue-600:  #2563EB;
-    --blue-100:  #DBEAFE;
-    --blue-glow: rgba(150, 200, 255, 0.12);
-
-    --green-600: #16A34A;
-    --green-100: #DCFCE7;
-    --amber-600: #D97706;
-    --amber-100: #FEF3C7;
-    --red-600:   #DC2626;
-    --red-100:   #FEE2E2;
-    --purple-600:#7C3AED;
-    --purple-100:#EDE9FE;
-    --teal-600:  #0D9488;
-
-    --text-primary:   #2D2A26;
-    --text-secondary: #6B5E50;
-    --text-muted:     #A89F93;
-    --border:         #E8DFD3;
-    --border-soft:    #F0E8DE;
-
-    --shadow-xs:  0 1px 2px rgba(45, 42, 38, 0.04);
-    --shadow-sm:  0 2px 8px rgba(45, 42, 38, 0.06);
-    --shadow-md:  0 4px 20px rgba(45, 42, 38, 0.08);
-    --shadow-lg:  0 8px 40px rgba(45, 42, 38, 0.10);
-    --shadow-gold:0 4px 24px rgba(234, 179, 8, 0.12);
-
-    --radius-sm: 10px;
-    --radius-md: 14px;
-    --radius-lg: 18px;
-    --radius-xl: 22px;
-
-    --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --paper: #fffaf2;
+    --paper-2: #fff4e7;
+    --panel: rgba(255, 255, 255, 0.86);
+    --panel-solid: #ffffff;
+    --inner: #fff8ef;
+    --ink: #28313a;
+    --muted: #746c62;
+    --quiet: #9c9286;
+    --line: #eadfce;
+    --line-strong: #dccab3;
+    --gold: #eab308;
+    --gold-dark: #a16207;
+    --gold-soft: #fff1bd;
+    --blue: #96c8ff;
+    --blue-dark: #2563eb;
+    --blue-soft: #e8f3ff;
+    --green: #168a4a;
+    --green-soft: #e6f7ed;
+    --amber: #d97706;
+    --amber-soft: #fff4d6;
+    --red: #c2413b;
+    --red-soft: #fee7e4;
+    --violet: #7c3aed;
+    --violet-soft: #f0e9ff;
+    --shadow: 0 18px 55px rgba(91, 64, 31, 0.11);
+    --shadow-soft: 0 8px 24px rgba(91, 64, 31, 0.08);
+    --radius-xl: 28px;
+    --radius-lg: 22px;
+    --radius-md: 16px;
+    --radius-sm: 12px;
 }
 
-/* ═══════════════════════════════════════════════════
-   2.  GLOBAL RESETS + APP BACKGROUND
-   ═══════════════════════════════════════════════════ */
-html, body, .stApp, [data-testid="stAppViewContainer"],
-p, span, div, label, input, textarea, select, button, a, li, td, th {
-    font-family: var(--font) !important;
-    -webkit-font-smoothing: antialiased;
+html, body, .stApp, [data-testid="stAppViewContainer"] {
+    font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+    background: var(--paper) !important;
+    color: var(--ink) !important;
 }
-.stApp {
-    background: var(--bg-page) !important;
-    color: var(--text-primary) !important;
+
+.stApp::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+        radial-gradient(circle at 86% 6%, rgba(234, 179, 8, 0.22), transparent 22rem),
+        radial-gradient(circle at 92% 18%, rgba(150, 200, 255, 0.22), transparent 24rem),
+        linear-gradient(135deg, #fffaf2 0%, #fff6ea 48%, #f7fbff 100%);
 }
+
+.stApp::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    opacity: .7;
+    background-image:
+        linear-gradient(118deg, transparent 0 61%, rgba(234,179,8,.13) 61.4%, transparent 64%),
+        linear-gradient(126deg, transparent 0 58%, rgba(150,200,255,.15) 58.4%, transparent 61%),
+        linear-gradient(136deg, transparent 0 54%, rgba(234,179,8,.09) 54.4%, transparent 57%),
+        linear-gradient(145deg, transparent 0 52%, rgba(150,200,255,.10) 52.4%, transparent 55%);
+    animation: raysDrift 11s ease-in-out infinite alternate;
+}
+
+@keyframes raysDrift {
+    from { transform: translate3d(0, 0, 0); opacity: .58; }
+    to { transform: translate3d(-16px, 10px, 0); opacity: .9; }
+}
+
+[data-testid="stHeader"] {
+    background: rgba(255, 250, 242, .72) !important;
+    backdrop-filter: blur(18px);
+    border-bottom: 1px solid rgba(234, 223, 206, .74);
+}
+
+#MainMenu,
+footer,
+[data-testid="stDecoration"],
+[data-testid="stStatusWidget"],
+[data-testid="stToolbar"],
+[data-testid="stDeployButton"],
+[data-testid="stHeaderActionElements"] {
+    visibility: hidden !important;
+    display: none !important;
+}
+
 .block-container {
-    max-width: 1440px !important;
-    padding: 1.2rem 2rem 3rem 2rem !important;
+    max-width: 1460px !important;
+    padding: 1.25rem 2rem 3rem !important;
     position: relative;
     z-index: 2;
 }
 
-/* Header + Sidebar */
-[data-testid="stHeader"] {
-    background: rgba(255,249,240,0.6) !important;
-    backdrop-filter: blur(18px) saturate(1.4);
-    border-bottom: 1px solid var(--border-soft);
-}
-[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #FFFDF8, #FFF6EC) !important;
-    border-right: 1px solid var(--border);
-}
-/* Hide Streamlit branding */
-#MainMenu, footer, header [data-testid="stStatusWidget"] { visibility: hidden; }
-
-/* ═══════════════════════════════════════════════════
-   3.  SIDE RAYS — CSS-based Volumetric Light Effect
-       Replicates the ReactBits SideRays component
-       using pure CSS (gold #EAB308 + blue #96c8ff)
-       emanating from the top-right corner.
-   ═══════════════════════════════════════════════════ */
-.side-rays {
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    overflow: hidden;
+h1, h2, h3, h4, p, span, label, div {
+    color: var(--ink);
 }
 
-/* Golden light source at top-right */
-.side-rays .glow {
-    position: absolute;
-    top: -12%;
-    right: -8%;
-    width: 520px;
-    height: 520px;
-    background: radial-gradient(ellipse at center,
-        rgba(234,179,8,0.18) 0%,
-        rgba(234,179,8,0.08) 30%,
-        rgba(150,200,255,0.04) 55%,
-        transparent 75%);
-    border-radius: 50%;
-    filter: blur(50px);
-    animation: glow-pulse 7s ease-in-out infinite alternate;
-}
-.side-rays .glow-2 {
-    position: absolute;
-    top: 5%;
-    right: 2%;
-    width: 300px;
-    height: 300px;
-    background: radial-gradient(ellipse at center,
-        rgba(150,200,255,0.12) 0%,
-        rgba(150,200,255,0.04) 40%,
-        transparent 70%);
-    border-radius: 50%;
-    filter: blur(40px);
-    animation: glow-pulse 9s ease-in-out 2s infinite alternate;
-}
-
-/* Ray beams — golden */
-.ray { position: absolute; top: 0; right: 0; transform-origin: top right; }
-
-.ray.g1 { width: 220%; height: 2px;
-    background: linear-gradient(270deg, rgba(234,179,8,0.12), rgba(234,179,8,0.03) 60%, transparent);
-    transform: rotate(-18deg); filter: blur(6px);
-    animation: ray-breathe 7s ease-in-out infinite alternate; }
-.ray.g2 { width: 200%; height: 3px;
-    background: linear-gradient(270deg, rgba(234,179,8,0.10), rgba(234,179,8,0.02) 55%, transparent);
-    transform: rotate(-28deg); filter: blur(10px);
-    animation: ray-breathe 9s ease-in-out 1s infinite alternate; }
-.ray.g3 { width: 180%; height: 2px;
-    background: linear-gradient(270deg, rgba(234,179,8,0.08), transparent 50%);
-    transform: rotate(-40deg); filter: blur(8px);
-    animation: ray-breathe 11s ease-in-out 2s infinite alternate; }
-.ray.g4 { width: 160%; height: 1.5px;
-    background: linear-gradient(270deg, rgba(234,179,8,0.07), transparent 45%);
-    transform: rotate(-52deg); filter: blur(7px);
-    animation: ray-breathe 8s ease-in-out 3s infinite alternate; }
-
-/* Ray beams — soft blue */
-.ray.b1 { width: 190%; height: 2px;
-    background: linear-gradient(270deg, rgba(150,200,255,0.10), rgba(150,200,255,0.02) 55%, transparent);
-    transform: rotate(-23deg); filter: blur(8px);
-    animation: ray-breathe 10s ease-in-out 0.5s infinite alternate; }
-.ray.b2 { width: 170%; height: 2.5px;
-    background: linear-gradient(270deg, rgba(150,200,255,0.08), transparent 50%);
-    transform: rotate(-34deg); filter: blur(12px);
-    animation: ray-breathe 12s ease-in-out 1.5s infinite alternate; }
-.ray.b3 { width: 150%; height: 1.5px;
-    background: linear-gradient(270deg, rgba(150,200,255,0.06), transparent 45%);
-    transform: rotate(-46deg); filter: blur(9px);
-    animation: ray-breathe 9s ease-in-out 2.5s infinite alternate; }
-
-@keyframes glow-pulse {
-    0%   { opacity: 0.6; transform: scale(1); }
-    100% { opacity: 1;   transform: scale(1.08); }
-}
-@keyframes ray-breathe {
-    0%   { opacity: 0.25; }
-    50%  { opacity: 0.85; }
-    100% { opacity: 0.4;  }
-}
-@media (prefers-reduced-motion: reduce) {
-    .side-rays * { animation: none !important; }
-}
-
-/* ═══════════════════════════════════════════════════
-   4.  TYPOGRAPHY
-   ═══════════════════════════════════════════════════ */
-h1, h2, h3, h4, h5, h6 {
-    color: var(--text-primary) !important;
-    font-weight: 700 !important;
-    letter-spacing: -0.02em;
-}
-
-/* ═══════════════════════════════════════════════════
-   5.  FORM CONTROLS — rounded, warm
-   ═══════════════════════════════════════════════════ */
-/* Number, text, textarea */
-input[type="number"],
-input[type="text"],
-.stNumberInput > div > div > input,
-.stTextInput > div > div > input,
-.stTextArea textarea {
-    border-radius: var(--radius-sm) !important;
-    border: 1.5px solid var(--border) !important;
-    background: var(--bg-surface) !important;
-    color: var(--text-primary) !important;
-    box-shadow: var(--shadow-xs) !important;
-    transition: border 0.2s, box-shadow 0.2s !important;
-}
-input:focus, textarea:focus {
-    border-color: var(--gold-500) !important;
-    box-shadow: 0 0 0 3px var(--gold-glow) !important;
-}
-
-/* ── Selectbox — FIX for blank/black text ── */
-div[data-baseweb="select"] {
-    border-radius: var(--radius-sm) !important;
-}
-div[data-baseweb="select"] > div {
-    background: var(--bg-surface) !important;
-    color: var(--text-primary) !important;
-    border-radius: var(--radius-sm) !important;
-    border: 1.5px solid var(--border) !important;
-    box-shadow: var(--shadow-xs) !important;
-}
-div[data-baseweb="select"] > div:hover {
-    border-color: var(--gold-500) !important;
-}
-/* Selected value text */
-div[data-baseweb="select"] span,
-div[data-baseweb="select"] div[class*="ValueContainer"] span,
-div[data-baseweb="select"] div[class*="singleValue"],
-div[data-baseweb="select"] [data-testid="stMarkdownContainer"] {
-    color: var(--text-primary) !important;
-    opacity: 1 !important;
-}
-/* Placeholder text */
-div[data-baseweb="select"] div[class*="placeholder"] {
-    color: var(--text-muted) !important;
-}
-/* Dropdown menu */
-div[data-baseweb="popover"],
-div[data-baseweb="popover"] > div,
-ul[role="listbox"] {
-    background: var(--bg-surface) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius-sm) !important;
-    box-shadow: var(--shadow-md) !important;
-}
-/* Dropdown items */
-li[role="option"] {
-    color: var(--text-primary) !important;
-    background: transparent !important;
-}
-li[role="option"]:hover,
-li[role="option"][aria-selected="true"] {
-    background: var(--gold-200) !important;
-    color: var(--gold-900) !important;
-}
-/* Dropdown arrow */
-div[data-baseweb="select"] svg {
-    color: var(--text-secondary) !important;
-    fill: var(--text-secondary) !important;
-}
-
-/* Slider */
-.stSlider > div > div > div > div {
-    background: linear-gradient(90deg, var(--gold-500), var(--blue-soft)) !important;
-}
-.stSlider [data-baseweb="slider"] div[role="slider"] {
-    background: var(--gold-500) !important;
-    border-color: var(--gold-600) !important;
-}
-/* Slider labels */
-.stSlider label, .stSlider span {
-    color: var(--text-primary) !important;
-}
-
-/* Label text across all inputs */
-.stSelectbox label, .stNumberInput label, .stSlider label,
-.stTextInput label, .stTextArea label, .stRadio label,
-.stCheckbox label, .stMultiSelect label {
-    color: var(--text-primary) !important;
-    font-weight: 600 !important;
-    font-size: 0.88rem !important;
-}
-
-/* Help text */
-.stTooltipIcon svg {
-    color: var(--text-muted) !important;
-    fill: var(--text-muted) !important;
-}
-
-/* ═══════════════════════════════════════════════════
-   6.  BUTTONS — warm gold gradient
-   ═══════════════════════════════════════════════════ */
-.stButton > button,
-.stFormSubmitButton > button {
-    border-radius: var(--radius-md) !important;
-    border: none !important;
-    background: linear-gradient(135deg, var(--gold-500) 0%, var(--gold-600) 100%) !important;
-    color: var(--gold-900) !important;
-    font-weight: 800 !important;
-    font-size: 0.95rem !important;
-    padding: 0.7rem 1.8rem !important;
-    min-height: 52px !important;
-    box-shadow: var(--shadow-gold) !important;
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    letter-spacing: 0.01em;
-    width: 100%;
-}
-.stButton > button:hover,
-.stFormSubmitButton > button:hover {
-    background: linear-gradient(135deg, var(--gold-600) 0%, var(--gold-700) 100%) !important;
-    box-shadow: 0 6px 28px rgba(234, 179, 8, 0.3) !important;
-    transform: translateY(-1px);
-    color: #FFFFFF !important;
-}
-.stButton > button:active,
-.stFormSubmitButton > button:active {
-    transform: translateY(0);
-}
-.stDownloadButton > button {
-    border-radius: var(--radius-sm) !important;
-    border: 1.5px solid var(--border) !important;
-    background: var(--bg-surface) !important;
-    color: var(--text-primary) !important;
-    font-weight: 600 !important;
-    box-shadow: var(--shadow-sm) !important;
-}
-
-/* ═══════════════════════════════════════════════════
-   7.  BOX-IN-BOX CARD SYSTEM
-   ═══════════════════════════════════════════════════ */
-/* Outer container */
-.outer-box {
-    background: var(--bg-surface);
-    border: 1px solid var(--border);
+.hero {
+    border: 1px solid rgba(220, 202, 179, .86);
     border-radius: var(--radius-xl);
-    padding: 1.6rem;
-    box-shadow: var(--shadow-md);
-    margin-bottom: 1rem;
-    position: relative;
-    overflow: hidden;
-}
-/* Inner card */
-.inner-card {
-    background: var(--bg-inner);
-    border: 1px solid var(--border-soft);
-    border-radius: var(--radius-md);
-    padding: 1.2rem 1.4rem;
-    position: relative;
+    padding: 1.35rem;
+    background: linear-gradient(145deg, rgba(255,255,255,.86), rgba(255,246,234,.82));
+    box-shadow: var(--shadow);
+    margin-bottom: 1.05rem;
 }
 
-/* ═══════════════════════════════════════════════════
-   8.  METRIC CARDS
-   ═══════════════════════════════════════════════════ */
-.metric-card {
-    background: var(--bg-surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: 1.1rem 1.2rem;
-    min-height: 120px;
-    box-shadow: var(--shadow-sm);
-    position: relative;
-    overflow: hidden;
-    transition: transform 0.25s ease, box-shadow 0.25s ease;
+.hero-inner {
+    border: 1px solid rgba(234, 223, 206, .94);
+    border-radius: 22px;
+    padding: 1.8rem 2rem;
+    background:
+        linear-gradient(115deg, rgba(255,255,255,.92), rgba(255,248,239,.76)),
+        radial-gradient(circle at top right, rgba(234,179,8,.18), transparent 22rem);
 }
-.metric-card:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-md);
-}
-.metric-card::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; bottom: 0;
-    width: 4px;
-    border-radius: 4px 0 0 4px;
-}
-.metric-card.t-gold::before    { background: linear-gradient(180deg, var(--gold-500), var(--gold-400)); }
-.metric-card.t-blue::before    { background: linear-gradient(180deg, var(--blue-500), var(--blue-soft)); }
-.metric-card.t-green::before   { background: linear-gradient(180deg, var(--green-600), #22C55E); }
-.metric-card.t-amber::before   { background: linear-gradient(180deg, var(--amber-600), #F59E0B); }
-.metric-card.t-red::before     { background: linear-gradient(180deg, var(--red-600), #EF4444); }
-.metric-card.t-purple::before  { background: linear-gradient(180deg, var(--purple-600), #8B5CF6); }
 
-.mc-label { color: var(--text-muted); font-size: 0.76rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.35rem; }
-.mc-value { font-size: clamp(1.4rem, 2.8vw, 2rem); font-weight: 800; color: var(--text-primary); line-height: 1.1; }
-.mc-detail { color: var(--text-muted); font-size: 0.8rem; margin-top: 0.45rem; font-weight: 500; }
-
-/* ═══════════════════════════════════════════════════
-   9.  HEADER BANNER
-   ═══════════════════════════════════════════════════ */
-.hero-banner {
-    background: linear-gradient(135deg,
-        rgba(234,179,8,0.06) 0%,
-        rgba(255,255,255,0.5) 40%,
-        rgba(150,200,255,0.04) 100%);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-xl);
-    padding: 2rem 2.4rem;
-    margin-bottom: 1.5rem;
-    box-shadow: var(--shadow-sm);
-    position: relative;
-    overflow: hidden;
-}
-.hero-banner::after {
-    content: '';
-    position: absolute;
-    top: -40%; right: -6%;
-    width: 260px; height: 260px;
-    background: radial-gradient(circle, rgba(234,179,8,0.08), transparent 65%);
-    border-radius: 50%;
-    pointer-events: none;
-}
-.hero-eyebrow {
+.eyebrow {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    color: var(--gold-600);
-    font-weight: 700;
-    font-size: 0.75rem;
+    gap: .55rem;
+    color: var(--gold-dark);
+    font-weight: 800;
+    font-size: .8rem;
+    letter-spacing: .11em;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
-    margin-bottom: 0.4rem;
-}
-.hero-eyebrow .pulse-dot {
-    width: 8px; height: 8px;
-    background: var(--gold-500);
-    border-radius: 50%;
-    animation: dot-pulse 2s ease-in-out infinite;
-}
-@keyframes dot-pulse {
-    0%,100% { opacity: 1; transform: scale(1); }
-    50%     { opacity: 0.4; transform: scale(1.4); }
-}
-.hero-title {
-    font-size: clamp(1.6rem, 3.5vw, 2.4rem) !important;
-    font-weight: 900 !important;
-    color: var(--text-primary) !important;
-    margin: 0.2rem 0 0.45rem 0 !important;
-    line-height: 1.15 !important;
-}
-.hero-sub {
-    color: var(--text-secondary);
-    font-size: 0.98rem;
-    line-height: 1.55;
-    max-width: 680px;
-    margin: 0;
+    margin-bottom: .85rem;
 }
 
-/* ═══════════════════════════════════════════════════
-   10.  RESULT / TRIAGE CARDS
-   ═══════════════════════════════════════════════════ */
-.result-box {
-    background: var(--bg-surface);
-    border: 1px solid var(--border);
+.pulse-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--gold);
+    box-shadow: 0 0 0 7px rgba(234,179,8,.16);
+}
+
+.hero-title {
+    margin: 0;
+    font-size: clamp(2.15rem, 5vw, 4.35rem);
+    line-height: .98;
+    font-weight: 800;
+    letter-spacing: 0;
+    color: var(--ink) !important;
+}
+
+.hero-copy {
+    max-width: 900px;
+    margin-top: .9rem;
+    font-size: 1.03rem;
+    line-height: 1.65;
+    color: var(--muted);
+}
+
+.outer-card {
+    border: 1px solid rgba(220, 202, 179, .9);
     border-radius: var(--radius-xl);
-    padding: 1.8rem 2rem;
-    box-shadow: var(--shadow-lg);
-    position: relative;
-    overflow: hidden;
+    padding: .85rem;
+    background: rgba(255, 255, 255, .70);
+    box-shadow: var(--shadow-soft);
     margin-bottom: 1rem;
 }
-.result-box::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; bottom: 0;
-    width: 5px;
-}
-.result-box.s-low::before    { background: linear-gradient(180deg, var(--green-600), #22C55E); }
-.result-box.s-gray::before   { background: linear-gradient(180deg, var(--gold-500), var(--gold-400)); }
-.result-box.s-high::before   { background: linear-gradient(180deg, var(--red-600), #EF4444); }
 
-.result-tag {
-    display: inline-block;
-    padding: 0.22rem 0.7rem;
-    border-radius: 20px;
-    font-size: 0.7rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-}
-.s-low .result-tag   { background: var(--green-100); color: var(--green-600); }
-.s-gray .result-tag  { background: var(--gold-200);  color: var(--gold-700); }
-.s-high .result-tag  { background: var(--red-100);   color: var(--red-600); }
-
-.risk-pct {
-    font-size: clamp(2.8rem, 6vw, 4.4rem);
-    font-weight: 900;
-    line-height: 1;
-    margin: 0.4rem 0 0.3rem 0;
-    color: var(--text-primary);
-}
-.s-low .risk-pct  { color: var(--green-600); }
-.s-gray .risk-pct { color: var(--gold-600); }
-.s-high .risk-pct { color: var(--red-600); }
-
-.result-title { font-size: 1.2rem !important; font-weight: 700 !important; margin: 0.3rem 0 !important; color: var(--text-primary) !important; }
-.result-desc  { color: var(--text-secondary); font-size: 0.92rem; line-height: 1.5; margin: 0; }
-.result-next  { margin-top: 0.9rem; padding-top: 0.9rem; border-top: 1px solid var(--border-soft); color: var(--text-secondary); font-weight: 600; font-size: 0.85rem; }
-
-/* Gate pills */
-.gate-row {
-    display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.8rem;
-}
-.gate-pill {
-    flex: 1; min-width: 120px; text-align: center;
-    background: var(--bg-inner);
-    border: 1px solid var(--border-soft);
-    border-radius: var(--radius-sm);
-    padding: 0.5rem 0.8rem;
-}
-.gate-pill .gp-label {
-    display: block; font-size: 0.68rem; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.06em;
-    color: var(--text-muted); margin-bottom: 0.15rem;
-}
-.gate-pill .gp-val {
-    font-size: 0.95rem; font-weight: 800; color: var(--text-primary);
-}
-
-/* ═══════════════════════════════════════════════════
-   11.  AI CLINICAL NOTE
-   ═══════════════════════════════════════════════════ */
-.ai-note {
-    background: linear-gradient(135deg, var(--gold-100) 0%, var(--blue-100) 100%);
-    border: 1px solid var(--border);
+.inner-card {
+    border: 1px solid rgba(234, 223, 206, .94);
     border-radius: var(--radius-lg);
-    padding: 1.6rem 1.8rem;
-    box-shadow: var(--shadow-md), 0 0 30px rgba(234,179,8,0.06);
-    position: relative;
-    overflow: hidden;
-    margin-top: 0.8rem;
-}
-.ai-note::before {
-    content: '';
-    position: absolute; top: 0; left: 0; right: 0; height: 3px;
-    background: linear-gradient(90deg, var(--gold-500), var(--blue-soft), var(--purple-600));
-}
-.ai-note-hdr {
-    display: flex; align-items: center; gap: 0.55rem; margin-bottom: 0.9rem;
-}
-.ai-note-icon {
-    width: 34px; height: 34px;
-    background: linear-gradient(135deg, var(--gold-500), var(--blue-soft));
-    border-radius: 9px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 1rem;
-    box-shadow: 0 4px 12px rgba(234,179,8,0.18);
-}
-.ai-note-hdr h4 {
-    margin: 0 !important; font-size: 1rem !important; color: var(--text-primary) !important;
-}
-.ai-badge {
-    background: var(--gold-200); color: var(--gold-700);
-    padding: 0.12rem 0.5rem; border-radius: 10px;
-    font-size: 0.65rem; font-weight: 700; letter-spacing: 0.04em;
-}
-.ai-note-body {
-    color: var(--text-secondary); font-size: 0.95rem; line-height: 1.7; text-align: justify;
+    background: rgba(255, 250, 244, .92);
+    padding: 1.15rem;
 }
 
-/* ═══════════════════════════════════════════════════
-   12.  SECTION HEADERS
-   ═══════════════════════════════════════════════════ */
-.sec-hdr {
-    display: flex; align-items: center; gap: 0.55rem;
-    margin: 1rem 0 0.7rem 0;
-    padding-bottom: 0.55rem;
-    border-bottom: 2px solid var(--border-soft);
-}
-.sec-icon {
-    width: 30px; height: 30px; border-radius: 8px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 0.95rem;
-}
-.sec-icon.gold   { background: var(--gold-200); }
-.sec-icon.blue   { background: var(--blue-100); }
-.sec-icon.green  { background: var(--green-100); }
-.sec-icon.amber  { background: var(--amber-100); }
-.sec-icon.purple { background: var(--purple-100); }
-.sec-hdr h3 { margin: 0 !important; font-size: 1.05rem !important; }
-
-/* ═══════════════════════════════════════════════════
-   13.  PROGRESS BAR (risk gradient)
-   ═══════════════════════════════════════════════════ */
-.stProgress > div > div > div > div {
-    background: linear-gradient(90deg,
-        var(--green-600) 0%, var(--gold-500) 50%, var(--red-600) 100%) !important;
-    border-radius: 8px !important;
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    border: 1px solid rgba(220, 202, 179, .9) !important;
+    border-radius: var(--radius-xl) !important;
+    padding: .9rem !important;
+    background: rgba(255, 255, 255, .72) !important;
+    box-shadow: var(--shadow-soft) !important;
 }
 
-/* ═══════════════════════════════════════════════════
-   14.  EXPANDER
-   ═══════════════════════════════════════════════════ */
-div[data-testid="stExpander"] {
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius-md) !important;
-    background: var(--bg-surface) !important;
-    box-shadow: var(--shadow-xs) !important;
-}
-.streamlit-expanderHeader {
-    font-weight: 600 !important;
-    color: var(--text-secondary) !important;
+div[data-testid="stVerticalBlockBorderWrapper"] > div {
+    border-radius: var(--radius-lg) !important;
 }
 
-/* ═══════════════════════════════════════════════════
-   15.  ANIMATIONS
-   ═══════════════════════════════════════════════════ */
-.fade-in {
-    animation: fadeSlideIn 0.45s cubic-bezier(0.16,1,0.3,1) forwards;
-}
-@keyframes fadeSlideIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to   { opacity: 1; transform: translateY(0); }
+div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stVerticalBlock"] {
+    gap: .8rem;
 }
 
-/* ═══════════════════════════════════════════════════
-   16.  PLACEHOLDER / EMPTY STATE
-   ═══════════════════════════════════════════════════ */
+.section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: .75rem;
+}
+
+.section-title {
+    display: flex;
+    align-items: center;
+    gap: .7rem;
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 800;
+}
+
+.section-icon {
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    border-radius: 13px;
+    background: linear-gradient(135deg, var(--gold-soft), var(--blue-soft));
+    border: 1px solid var(--line);
+    color: var(--gold-dark);
+    font-weight: 900;
+}
+
+.mini-pill {
+    border: 1px solid var(--line);
+    background: rgba(255,255,255,.78);
+    border-radius: 999px;
+    color: var(--muted);
+    font-size: .75rem;
+    font-weight: 700;
+    padding: .42rem .7rem;
+}
+
+.metric-card {
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 1rem;
+    background: rgba(255,255,255,.84);
+    box-shadow: 0 8px 22px rgba(91,64,31,.055);
+    height: 100%;
+}
+
+.metric-label {
+    color: var(--muted);
+    font-size: .74rem;
+    font-weight: 800;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+}
+
+.metric-value {
+    color: var(--ink);
+    font-size: 1.55rem;
+    line-height: 1.05;
+    font-weight: 800;
+    margin-top: .28rem;
+}
+
+.metric-help {
+    color: var(--quiet);
+    font-size: .78rem;
+    margin-top: .32rem;
+}
+
+.decision {
+    border-radius: 22px;
+    padding: 1.15rem;
+    border: 1px solid var(--line);
+    background: #fff;
+}
+
+.decision.low { background: linear-gradient(145deg, #fff, var(--green-soft)); border-color: #b9e8ca; }
+.decision.gray { background: linear-gradient(145deg, #fff, var(--amber-soft)); border-color: #f4d58b; }
+.decision.high { background: linear-gradient(145deg, #fff, var(--red-soft)); border-color: #f4b3ad; }
+
+.decision-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+.decision-kicker {
+    color: var(--muted);
+    font-size: .74rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+}
+
+.decision-title {
+    margin-top: .35rem;
+    font-size: 1.25rem;
+    font-weight: 800;
+}
+
+.decision-score {
+    min-width: 110px;
+    text-align: right;
+    font-size: 2rem;
+    font-weight: 800;
+}
+
+.decision p {
+    margin: .75rem 0 0;
+    color: var(--muted);
+    line-height: 1.55;
+}
+
+.gate-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: .5rem;
+    margin-top: .85rem;
+}
+
+.gate {
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background: rgba(255,255,255,.72);
+    padding: .62rem .7rem;
+    color: var(--muted);
+    font-size: .78rem;
+    font-weight: 700;
+}
+
+.gate.active-low { color: var(--green); border-color: #aee3c0; background: var(--green-soft); }
+.gate.active-gray { color: var(--amber); border-color: #f1c66e; background: var(--amber-soft); }
+.gate.active-high { color: var(--red); border-color: #f0aaa4; background: var(--red-soft); }
+
+.note-card {
+    border: 1px solid #d7c5ad;
+    border-radius: 24px;
+    background: linear-gradient(145deg, #fff, #fff8ed);
+    box-shadow: var(--shadow-soft);
+    padding: 1rem;
+}
+
+.note-inner {
+    border: 1px dashed #d9c5aa;
+    border-radius: 18px;
+    padding: 1.1rem;
+    background: rgba(255,255,255,.78);
+}
+
+.note-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: .75rem;
+}
+
+.note-title {
+    font-weight: 800;
+    font-size: 1.05rem;
+}
+
+.note-badge {
+    border-radius: 999px;
+    padding: .28rem .58rem;
+    background: var(--blue-soft);
+    color: var(--blue-dark);
+    font-size: .72rem;
+    font-weight: 800;
+}
+
+.note-body {
+    color: var(--muted);
+    line-height: 1.7;
+    font-size: .95rem;
+}
+
 .empty-state {
     text-align: center;
-    padding: 3rem 2rem;
+    padding: 2.7rem 1.5rem;
 }
-.empty-state .icon { font-size: 3rem; margin-bottom: 0.6rem; }
-.empty-state h3 { color: var(--text-secondary) !important; font-weight: 600 !important; }
-.empty-state p  { color: var(--text-muted); max-width: 400px; margin: 0.4rem auto 0; }
 
-/* ═══════════════════════════════════════════════════
-   17.  FOOTER
-   ═══════════════════════════════════════════════════ */
-.app-ft {
-    text-align: center; padding: 1.5rem 0; margin-top: 2rem;
-    border-top: 1px solid var(--border-soft);
-    color: var(--text-muted); font-size: 0.8rem;
+.empty-icon {
+    width: 72px;
+    height: 72px;
+    border-radius: 24px;
+    display: grid;
+    place-items: center;
+    margin: 0 auto 1rem;
+    background: linear-gradient(135deg, var(--gold-soft), var(--blue-soft));
+    border: 1px solid var(--line);
+    font-size: 1.5rem;
+    font-weight: 900;
+    color: var(--gold-dark);
+}
+
+.empty-state h3 {
+    margin: .2rem 0;
+    font-size: 1.25rem;
+}
+
+.empty-state p {
+    margin: .4rem auto 0;
+    max-width: 440px;
+    color: var(--muted);
+}
+
+.footer {
+    color: var(--quiet);
+    text-align: center;
+    font-size: .78rem;
+    padding: 1.4rem 0 .6rem;
+}
+
+.stButton > button {
+    border: 0 !important;
+    border-radius: 15px !important;
+    min-height: 3rem;
+    background: linear-gradient(135deg, var(--gold), #f59e0b) !important;
+    color: #2b2110 !important;
+    font-weight: 800 !important;
+    box-shadow: 0 12px 26px rgba(234,179,8,.21) !important;
+    transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
+}
+
+.stButton > button:hover {
+    transform: translateY(-1px);
+    filter: saturate(1.08);
+    box-shadow: 0 16px 32px rgba(234,179,8,.28) !important;
+}
+
+.stDownloadButton > button {
+    border-radius: 15px !important;
+    border: 1px solid var(--line) !important;
+    background: #fff !important;
+    color: var(--ink) !important;
+    font-weight: 800 !important;
+}
+
+div[data-testid="stAlert"] {
+    border-radius: 16px !important;
+    border: 1px solid var(--line) !important;
+    background: rgba(255,255,255,.82) !important;
+}
+
+[data-testid="stMetric"] {
+    background: transparent !important;
+}
+
+input, textarea, [data-baseweb="select"] > div {
+    border-radius: 14px !important;
+    background-color: #fff !important;
+    color: var(--ink) !important;
+    border-color: var(--line-strong) !important;
+}
+
+input, textarea {
+    color: var(--ink) !important;
+    -webkit-text-fill-color: var(--ink) !important;
+}
+
+.stNumberInput div[data-baseweb="input"],
+.stNumberInput div[data-baseweb="input"] > div,
+.stNumberInput div[data-baseweb="input"] input {
+    background: #fff !important;
+    color: var(--ink) !important;
+    -webkit-text-fill-color: var(--ink) !important;
+    border-color: var(--line-strong) !important;
+}
+
+.stNumberInput button,
+.stNumberInput [role="button"] {
+    background: #fff8ef !important;
+    color: var(--gold-dark) !important;
+    border-color: var(--line-strong) !important;
+    box-shadow: none !important;
+}
+
+.stNumberInput button svg,
+.stNumberInput [role="button"] svg {
+    color: var(--gold-dark) !important;
+    fill: var(--gold-dark) !important;
+}
+
+[data-baseweb="select"] span,
+[data-baseweb="select"] div,
+[data-baseweb="select"] input,
+[data-baseweb="select"] p {
+    color: var(--ink) !important;
+    -webkit-text-fill-color: var(--ink) !important;
+}
+
+[data-baseweb="popover"],
+[data-baseweb="popover"] > div,
+ul[role="listbox"],
+li[role="option"] {
+    background: #fff !important;
+    color: var(--ink) !important;
+}
+
+li[role="option"]:hover,
+li[role="option"][aria-selected="true"] {
+    background: var(--gold-soft) !important;
+    color: var(--ink) !important;
+}
+
+.stSlider [data-baseweb="slider"] > div {
+    color: var(--gold) !important;
+}
+
+.stSlider [role="slider"] {
+    background: var(--gold) !important;
+    border-color: var(--gold-dark) !important;
+}
+
+label, .stCaptionContainer, .stMarkdown {
+    color: var(--muted) !important;
+}
+
+[data-testid="stDataFrame"] {
+    border-radius: 16px;
+    overflow: hidden;
+}
+
+@media (max-width: 900px) {
+    .block-container { padding: 1rem .85rem 2rem !important; }
+    .hero-inner { padding: 1.3rem; }
+    .gate-row { grid-template-columns: 1fr; }
+    .decision-top { display: block; }
+    .decision-score { text-align: left; margin-top: .5rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .stApp::after { animation: none; }
+    .stButton > button { transition: none; }
 }
 </style>
-
-<!-- ══════  SIDE RAYS BACKGROUND ELEMENTS  ══════ -->
-<div class="side-rays" aria-hidden="true">
-    <div class="glow"></div>
-    <div class="glow-2"></div>
-    <div class="ray g1"></div>
-    <div class="ray g2"></div>
-    <div class="ray g3"></div>
-    <div class="ray g4"></div>
-    <div class="ray b1"></div>
-    <div class="ray b2"></div>
-    <div class="ray b3"></div>
-</div>
-    """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True,
+    )
 
 
-# ╔═══════════════════════════════════════════════════════════════╗
-# ║                  MODEL & DATA HELPERS                        ║
-# ╚═══════════════════════════════════════════════════════════════╝
+def inject_reactbits_side_rays() -> None:
+    """Inject a React Bits SideRays-style WebGL shader as the full-page background."""
+    components.html(
+        """
+<script>
+(function () {
+    let hostWindow = window;
+    let doc = document;
+    let useParentLayer = false;
+
+    try {
+        if (window.parent && window.parent.document) {
+            hostWindow = window.parent;
+            doc = window.parent.document;
+            useParentLayer = true;
+        }
+    } catch (error) {
+        hostWindow = window;
+        doc = document;
+        useParentLayer = false;
+    }
+
+    const oldCleanup = hostWindow.__smartClinicSideRaysCleanup;
+    if (typeof oldCleanup === "function") oldCleanup();
+
+    const oldLayer = doc.getElementById("reactbits-side-rays-bg");
+    if (oldLayer) oldLayer.remove();
+
+    const styleId = "reactbits-side-rays-style";
+    const oldStyle = doc.getElementById(styleId);
+    if (oldStyle) oldStyle.remove();
+
+    const style = doc.createElement("style");
+    style.id = styleId;
+    style.textContent = `
+        #reactbits-side-rays-bg {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 0;
+            pointer-events: none;
+            overflow: hidden;
+            opacity: .82;
+        }
+        #reactbits-side-rays-bg canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            #reactbits-side-rays-bg { display: none; }
+        }
+    `;
+    doc.head.appendChild(style);
+
+    const layer = doc.createElement("div");
+    layer.id = "reactbits-side-rays-bg";
+    if (useParentLayer) {
+        doc.body.prepend(layer);
+    } else {
+        const frame = window.frameElement;
+        if (frame) {
+            frame.style.position = "fixed";
+            frame.style.inset = "0";
+            frame.style.width = "100vw";
+            frame.style.height = "100vh";
+            frame.style.border = "0";
+            frame.style.zIndex = "0";
+            frame.style.pointerEvents = "none";
+            frame.style.background = "transparent";
+        }
+        doc.documentElement.style.margin = "0";
+        doc.body.style.margin = "0";
+        doc.body.style.overflow = "hidden";
+        doc.body.appendChild(layer);
+    }
+
+    const canvas = doc.createElement("canvas");
+    layer.appendChild(canvas);
+
+    const gl = canvas.getContext("webgl", { alpha: true, antialias: true, premultipliedAlpha: false });
+    if (!gl) return;
+
+    const settings = {
+        speed: 2.5,
+        rayColor1: "#EAB308",
+        rayColor2: "#96c8ff",
+        intensity: 2.0,
+        spread: 2.0,
+        origin: "top-right",
+        tilt: 0.0,
+        saturation: 1.5,
+        blend: 0.75,
+        falloff: 1.6,
+        opacity: 0.78
+    };
+
+    function hexToRgb(hex) {
+        const m = /^#?([a-f\\d]{2})([a-f\\d]{2})([a-f\\d]{2})$/i.exec(hex);
+        return m ? [
+            parseInt(m[1], 16) / 255,
+            parseInt(m[2], 16) / 255,
+            parseInt(m[3], 16) / 255
+        ] : [1, 1, 1];
+    }
+
+    function originToFlip(origin) {
+        switch (origin) {
+            case "top-left": return [1, 0];
+            case "bottom-right": return [0, 1];
+            case "bottom-left": return [1, 1];
+            default: return [0, 0];
+        }
+    }
+
+    const vertexSource = `
+        attribute vec2 position;
+        void main() {
+            gl_Position = vec4(position, 0.0, 1.0);
+        }
+    `;
+
+    const fragmentSource = `
+        precision highp float;
+
+        uniform float iTime;
+        uniform vec2 iResolution;
+        uniform float iSpeed;
+        uniform vec3 iRayColor1;
+        uniform vec3 iRayColor2;
+        uniform float iIntensity;
+        uniform float iSpread;
+        uniform float iFlipX;
+        uniform float iFlipY;
+        uniform float iTilt;
+        uniform float iSaturation;
+        uniform float iBlend;
+        uniform float iFalloff;
+        uniform float iOpacity;
+
+        float rayStrength(vec2 raySource, vec2 rayRefDirection, vec2 coord, float seedA, float seedB, float speed) {
+            vec2 sourceToCoord = coord - raySource;
+            float cosAngle = dot(normalize(sourceToCoord), rayRefDirection);
+            return clamp(
+                (0.45 + 0.15 * sin(cosAngle * seedA + iTime * speed)) +
+                (0.3 + 0.2 * cos(-cosAngle * seedB + iTime * speed)),
+                0.0, 1.0
+            ) * clamp((iResolution.x - length(sourceToCoord)) / iResolution.x, 0.5, 1.0);
+        }
+
+        void main() {
+            vec2 fragCoord = gl_FragCoord.xy;
+            if (iFlipX > 0.5) fragCoord.x = iResolution.x - fragCoord.x;
+            if (iFlipY > 0.5) fragCoord.y = iResolution.y - fragCoord.y;
+
+            vec2 coord = vec2(fragCoord.x, iResolution.y - fragCoord.y);
+            vec2 rayPos = vec2(iResolution.x * 1.1, -0.5 * iResolution.y);
+
+            float tiltRad = iTilt * 3.14159265 / 180.0;
+            float cs = cos(tiltRad);
+            float sn = sin(tiltRad);
+            vec2 rel = coord - rayPos;
+            vec2 tiltedCoord = vec2(rel.x * cs - rel.y * sn, rel.x * sn + rel.y * cs) + rayPos;
+
+            float halfSpread = iSpread * 0.275;
+            vec2 rayRefDir1 = normalize(vec2(cos(0.785398 + halfSpread), sin(0.785398 + halfSpread)));
+            vec2 rayRefDir2 = normalize(vec2(cos(0.785398 - halfSpread), sin(0.785398 - halfSpread)));
+
+            vec4 rays1 = vec4(iRayColor1, 1.0) * rayStrength(rayPos, rayRefDir1, tiltedCoord, 36.2214, 21.11349, iSpeed);
+            vec4 rays2 = vec4(iRayColor2, 1.0) * rayStrength(rayPos, rayRefDir2, tiltedCoord, 22.3991, 18.0234, iSpeed * 0.2);
+
+            vec4 color = rays1 * (1.0 - iBlend) * 0.9 + rays2 * iBlend * 0.9;
+
+            float distanceToLight = length(fragCoord.xy - vec2(rayPos.x, iResolution.y - rayPos.y)) / iResolution.y;
+            float brightness = iIntensity * 0.4 / pow(max(distanceToLight, 0.001), iFalloff);
+            color.rgb *= brightness;
+
+            float gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+            color.rgb = mix(vec3(gray), color.rgb, iSaturation);
+
+            color.a = max(color.r, max(color.g, color.b)) * iOpacity;
+            gl_FragColor = color;
+        }
+    `;
+
+    function compile(type, source) {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            console.warn(gl.getShaderInfoLog(shader));
+            gl.deleteShader(shader);
+            return null;
+        }
+        return shader;
+    }
+
+    const vertexShader = compile(gl.VERTEX_SHADER, vertexSource);
+    const fragmentShader = compile(gl.FRAGMENT_SHADER, fragmentSource);
+    if (!vertexShader || !fragmentShader) return;
+
+    const program = gl.createProgram();
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        console.warn(gl.getProgramInfoLog(program));
+        return;
+    }
+    gl.useProgram(program);
+
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+
+    const positionLocation = gl.getAttribLocation(program, "position");
+    gl.enableVertexAttribArray(positionLocation);
+    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+    const uniforms = {
+        iTime: gl.getUniformLocation(program, "iTime"),
+        iResolution: gl.getUniformLocation(program, "iResolution"),
+        iSpeed: gl.getUniformLocation(program, "iSpeed"),
+        iRayColor1: gl.getUniformLocation(program, "iRayColor1"),
+        iRayColor2: gl.getUniformLocation(program, "iRayColor2"),
+        iIntensity: gl.getUniformLocation(program, "iIntensity"),
+        iSpread: gl.getUniformLocation(program, "iSpread"),
+        iFlipX: gl.getUniformLocation(program, "iFlipX"),
+        iFlipY: gl.getUniformLocation(program, "iFlipY"),
+        iTilt: gl.getUniformLocation(program, "iTilt"),
+        iSaturation: gl.getUniformLocation(program, "iSaturation"),
+        iBlend: gl.getUniformLocation(program, "iBlend"),
+        iFalloff: gl.getUniformLocation(program, "iFalloff"),
+        iOpacity: gl.getUniformLocation(program, "iOpacity")
+    };
+
+    const [flipX, flipY] = originToFlip(settings.origin);
+    const color1 = hexToRgb(settings.rayColor1);
+    const color2 = hexToRgb(settings.rayColor2);
+    let animationId = null;
+
+    function resize() {
+        const dpr = Math.min(hostWindow.devicePixelRatio || 1, 2);
+        const width = Math.max(1, Math.floor(hostWindow.innerWidth * dpr));
+        const height = Math.max(1, Math.floor(hostWindow.innerHeight * dpr));
+        if (canvas.width !== width || canvas.height !== height) {
+            canvas.width = width;
+            canvas.height = height;
+            gl.viewport(0, 0, width, height);
+        }
+        return [width, height];
+    }
+
+    function render(time) {
+        const [width, height] = resize();
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.useProgram(program);
+        gl.uniform1f(uniforms.iTime, time * 0.001);
+        gl.uniform2f(uniforms.iResolution, width, height);
+        gl.uniform1f(uniforms.iSpeed, settings.speed);
+        gl.uniform3f(uniforms.iRayColor1, color1[0], color1[1], color1[2]);
+        gl.uniform3f(uniforms.iRayColor2, color2[0], color2[1], color2[2]);
+        gl.uniform1f(uniforms.iIntensity, settings.intensity);
+        gl.uniform1f(uniforms.iSpread, settings.spread);
+        gl.uniform1f(uniforms.iFlipX, flipX);
+        gl.uniform1f(uniforms.iFlipY, flipY);
+        gl.uniform1f(uniforms.iTilt, settings.tilt);
+        gl.uniform1f(uniforms.iSaturation, settings.saturation);
+        gl.uniform1f(uniforms.iBlend, settings.blend);
+        gl.uniform1f(uniforms.iFalloff, settings.falloff);
+        gl.uniform1f(uniforms.iOpacity, settings.opacity);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        animationId = hostWindow.requestAnimationFrame(render);
+    }
+
+    hostWindow.addEventListener("resize", resize);
+    animationId = hostWindow.requestAnimationFrame(render);
+
+    hostWindow.__smartClinicSideRaysCleanup = function () {
+        if (animationId) hostWindow.cancelAnimationFrame(animationId);
+        hostWindow.removeEventListener("resize", resize);
+        const ext = gl.getExtension("WEBGL_lose_context");
+        if (ext) ext.loseContext();
+        if (layer && layer.parentNode) layer.parentNode.removeChild(layer);
+        if (style && style.parentNode) style.parentNode.removeChild(style);
+    };
+})();
+</script>
+        """,
+        height=0,
+        width=0,
+    )
+
 
 @st.cache_resource(show_spinner=False)
-def _load_model(path):
-    p = Path(path)
-    return joblib.load(p) if p.exists() else None
+def load_model(path: Path) -> Any | None:
+    return joblib.load(path) if path.exists() else None
+
 
 @st.cache_data(show_spinner=False)
-def _load_csv():
+def load_dataset() -> pd.DataFrame:
     if not DATA_PATH.exists():
         return pd.DataFrame()
+
     df = pd.read_csv(DATA_PATH)
-    df["target_binary"] = (pd.to_numeric(df["target"], errors="coerce").fillna(0) > 0).astype(int)
+    if "target" in df.columns:
+        df["target_binary"] = (pd.to_numeric(df["target"], errors="coerce").fillna(0) > 0).astype(int)
     return df
 
-def _ref_ranges(df):
-    """Compute scaling ranges from a stratified training split (mirrors Data_Processing_final.py)."""
+
+@st.cache_data(show_spinner=False)
+def reference_ranges(df: pd.DataFrame) -> dict[str, dict[str, float]]:
+    if df.empty:
+        return FALLBACK_RANGES
+
     try:
         from sklearn.model_selection import train_test_split
+
         y = (pd.to_numeric(df["target"], errors="coerce").fillna(0) > 0).astype(int)
-        tr, _ = train_test_split(df, test_size=0.2, stratify=y, random_state=43)
+        train_df, _ = train_test_split(df, test_size=0.2, stratify=y, random_state=43)
     except Exception:
-        tr = df
-    out = {}
-    for c, fb in REF_RANGES.items():
-        v = pd.to_numeric(tr[c], errors="coerce")
-        if c == "chol":
-            v = v.replace(0, np.nan)
-        v = v.dropna()
-        out[c] = {"min": float(v.min()), "max": float(v.max())} if not v.empty else fb
-    return out
+        train_df = df
 
-def _scale(val, col, refs):
-    r = refs.get(col, REF_RANGES[col])
-    lo, hi = r["min"], r["max"]
-    if hi == lo:
+    ranges: dict[str, dict[str, float]] = {}
+    for col, fallback in FALLBACK_RANGES.items():
+        series = pd.to_numeric(train_df.get(col), errors="coerce")
+        if col == "chol":
+            series = series.replace(0, np.nan)
+        if col == "trestbps":
+            series = series.replace(0, np.nan)
+        series = series.dropna()
+        if series.empty:
+            ranges[col] = fallback
+        else:
+            ranges[col] = {"min": float(series.min()), "max": float(series.max())}
+    return ranges
+
+
+def scale_value(value: float | int | None, column: str, refs: dict[str, dict[str, float]]) -> float:
+    if value is None:
         return 0.0
-    return float(np.clip((float(val) - lo) / (hi - lo), 0.0, 1.0))
+    bounds = refs.get(column, FALLBACK_RANGES[column])
+    lo = bounds["min"]
+    hi = bounds["max"]
+    if hi <= lo:
+        return 0.0
+    return float(np.clip((float(value) - lo) / (hi - lo), 0.0, 1.0))
 
 
-# ── Tier 1 vector ──
-def _t1_vec(age, sex, cp, bp, refs):
-    row = {f: 0.0 for f in TIER1_COLS}
-    row["age"]     = _scale(age, "age", refs)
-    row["trestbps"] = _scale(bp, "trestbps", refs)
+def tier1_vector(age: int, sex: str, cp: str, bp: int, refs: dict[str, dict[str, float]]) -> pd.DataFrame:
+    row = {name: 0.0 for name in TIER1_COLS}
+    row["age"] = scale_value(age, "age", refs)
+    row["trestbps"] = scale_value(bp, "trestbps", refs)
     row[f"gender_{sex}"] = 1.0
-    k = f"cp_{cp}"
-    if k in row:
-        row[k] = 1.0
+    cp_col = f"cp_{cp}"
+    if cp_col in row:
+        row[cp_col] = 1.0
     return pd.DataFrame([row], columns=TIER1_COLS)
 
 
-# ── Tier 2 vector ──
-def _t2_vec(age, sex, cp, bp, chol, fbs, ecg, thalch,
-            exang, oldpeak, slope, ca, thal, refs, model):
-    cols = list(getattr(model, "feature_names_in_", _default_t2_cols()))
-    row = {f: 0.0 for f in cols}
+def tier2_columns(model: Any | None) -> list[str]:
+    if model is not None and hasattr(model, "feature_names_in_"):
+        return list(model.feature_names_in_)
+    return TIER2_FALLBACK_COLS
 
-    for c, v in [("age", age), ("trestbps", bp), ("chol", chol),
-                 ("thalch", thalch), ("oldpeak", oldpeak)]:
-        if c in row and v is not None:
-            row[c] = _scale(v, c, refs)
 
-    # Missing indicators
-    for m in ["ca_missing", "chol_missing_or_zero", "oldpeak_missing"]:
-        if m in row:
-            row[m] = 0.0
-    if "chol_missing_or_zero" in row and (chol is None or chol == 0):
-        row["chol_missing_or_zero"] = 1.0
+def set_one_hot(row: dict[str, float], key: str) -> None:
+    if key in row:
+        row[key] = 1.0
 
-    # One-hot encodings
-    for key in [f"gender_{sex}", f"cp_{cp}"]:
-        if key in row:
-            row[key] = 1.0
 
-    ecg_code = RESTECG_MAP.get(ecg)
-    if ecg_code is not None:
-        k = f"restecg_{float(ecg_code)}"
-        if k in row: row[k] = 1.0
+def tier2_vector(
+    model: Any | None,
+    refs: dict[str, dict[str, float]],
+    *,
+    age: int,
+    sex: str,
+    cp: str,
+    bp: int,
+    chol: int,
+    fbs: bool,
+    restecg: str,
+    thalch: int,
+    exang: bool,
+    oldpeak: float,
+    slope: str,
+    ca: int,
+    thal: str,
+) -> pd.DataFrame:
+    cols = tier2_columns(model)
+    row = {col: 0.0 for col in cols}
 
-    fbs_v = 1.0 if fbs else 0.0
-    k = f"fbs_{fbs_v}"
-    if k in row: row[k] = 1.0
+    row["age"] = scale_value(age, "age", refs) if "age" in row else 0.0
+    row["trestbps"] = scale_value(bp, "trestbps", refs) if "trestbps" in row else 0.0
+    row["chol"] = scale_value(chol, "chol", refs) if "chol" in row else 0.0
+    row["thalch"] = scale_value(thalch, "thalch", refs) if "thalch" in row else 0.0
+    row["oldpeak"] = scale_value(oldpeak, "oldpeak", refs) if "oldpeak" in row else 0.0
 
-    exang_v = 1.0 if exang else 0.0
-    k = f"exang_{exang_v}"
-    if k in row: row[k] = 1.0
+    if "ca_missing" in row:
+        row["ca_missing"] = 0.0
+    if "chol_missing_or_zero" in row:
+        row["chol_missing_or_zero"] = 1.0 if chol == 0 else 0.0
+    if "oldpeak_missing" in row:
+        row["oldpeak_missing"] = 0.0
 
-    slope_code = SLOPE_MAP.get(slope)
-    if slope_code is not None:
-        k = f"slope_{float(slope_code)}"
-        if k in row: row[k] = 1.0
-
-    thal_code = THAL_MAP.get(thal)
-    if thal_code is not None:
-        k = f"thal_{float(thal_code)}"
-        if k in row: row[k] = 1.0
-
-    if ca is not None:
-        k = f"ca_{float(ca)}"
-        if k in row: row[k] = 1.0
+    set_one_hot(row, f"gender_{sex}")
+    set_one_hot(row, f"cp_{cp}")
+    set_one_hot(row, f"restecg_{float(RESTECG_MAP[restecg])}")
+    set_one_hot(row, f"fbs_{1.0 if fbs else 0.0}")
+    set_one_hot(row, f"exang_{1.0 if exang else 0.0}")
+    set_one_hot(row, f"slope_{float(SLOPE_MAP[slope])}")
+    set_one_hot(row, f"ca_{float(ca)}")
+    set_one_hot(row, f"thal_{float(THAL_MAP[thal])}")
 
     return pd.DataFrame([row], columns=cols)
 
 
-def _default_t2_cols():
-    return [
-        "age", "trestbps", "chol", "thalch", "oldpeak",
-        "ca_missing", "chol_missing_or_zero", "oldpeak_missing",
-        "cp_asymptomatic", "cp_atypical angina", "cp_non-anginal", "cp_typical angina",
-        "gender_Female", "gender_Male",
-        "fbs_-1.0", "fbs_0.0", "fbs_1.0",
-        "restecg_-1.0", "restecg_0.0", "restecg_1.0", "restecg_2.0",
-        "exang_0.0", "exang_1.0",
-        "slope_-1.0", "slope_0.0", "slope_1.0", "slope_2.0",
-        "ca_-1.0", "ca_0.0", "ca_1.0", "ca_2.0", "ca_3.0",
-        "thal_-1.0", "thal_0.0", "thal_1.0", "thal_2.0",
+def boolish(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y"}
+    return bool(value)
+
+
+def tier2_background_frame(
+    model: Any | None,
+    refs: dict[str, dict[str, float]],
+    dataset: pd.DataFrame,
+    limit: int = 24,
+) -> pd.DataFrame:
+    cols = tier2_columns(model)
+    fallback = pd.DataFrame([{col: 0.0 for col in cols}], columns=cols)
+
+    required = [
+        "age",
+        "gender",
+        "cp",
+        "trestbps",
+        "chol",
+        "fbs",
+        "restecg",
+        "thalch",
+        "exang",
+        "oldpeak",
+        "slope",
+        "ca",
+        "thal",
     ]
+    if dataset.empty or any(col not in dataset.columns for col in required):
+        return fallback
+
+    rows = dataset.dropna(subset=required)
+    if rows.empty:
+        return fallback
+    if len(rows) > limit:
+        rows = rows.sample(n=limit, random_state=43)
+
+    frames = []
+    for row in rows.itertuples(index=False):
+        values = row._asdict()
+        try:
+            frames.append(
+                tier2_vector(
+                    model,
+                    refs,
+                    age=int(values["age"]),
+                    sex=str(values["gender"]),
+                    cp=str(values["cp"]),
+                    bp=int(values["trestbps"]),
+                    chol=int(values["chol"]),
+                    fbs=boolish(values["fbs"]),
+                    restecg=str(values["restecg"]),
+                    thalch=int(values["thalch"]),
+                    exang=boolish(values["exang"]),
+                    oldpeak=float(values["oldpeak"]),
+                    slope=str(values["slope"]),
+                    ca=int(float(values["ca"])),
+                    thal=str(values["thal"]),
+                )
+            )
+        except Exception:
+            continue
+
+    if not frames:
+        return fallback
+    return pd.concat(frames, ignore_index=True).reindex(columns=cols, fill_value=0.0)
 
 
-def _prob(model, X):
+def predict_probability(model: Any, frame: pd.DataFrame) -> float:
     if hasattr(model, "predict_proba"):
-        p = model.predict_proba(X)
-        cls = list(getattr(model, "classes_", range(p.shape[1])))
-        idx = cls.index(1) if 1 in cls else p.shape[1] - 1
-        return float(p[0, idx])
-    return float(model.predict(X)[0])
+        probabilities = model.predict_proba(frame)
+        classes = list(getattr(model, "classes_", range(probabilities.shape[1])))
+        positive_index = classes.index(1) if 1 in classes else probabilities.shape[1] - 1
+        return float(probabilities[0, positive_index])
+    return float(model.predict(frame)[0])
 
 
-def _route(prob, lo=LOW_THRESHOLD, hi=HIGH_THRESHOLD):
-    if prob <= lo:
-        return {"status": "low", "title": "Safe Discharge Candidate",
-                "action": "Tier 1 vitals sit below the low-risk gate. Standard clinical review recommended before discharge.",
-                "next": "No Tier 2 lab work triggered.", "icon": "✅"}
-    if prob >= hi:
-        return {"status": "high", "title": "Immediate Clinical Escalation",
-                "action": "Tier 1 vitals exceed the high-risk gate. Prioritize clinician review and confirmatory cardiac workup.",
-                "next": "Tier 2 panel auto-launched for full diagnostic assessment.", "icon": "🚨"}
-    return {"status": "gray", "title": "Gray Zone — Trigger Tier 2 Labs",
-            "action": "Tier 1 is uncertain. Collecting cholesterol, fasting blood sugar, ECG, max heart rate, and additional labs.",
-            "next": "Complete the Tier 2 panel below for a definitive diagnosis.", "icon": "⚠️"}
+def route_for_probability(probability: float, final: bool = False) -> dict[str, str]:
+    if final:
+        if probability >= 0.5:
+            return {
+                "status": "high",
+                "title": "High cardiac risk",
+                "action": "The full diagnostic profile indicates elevated cardiac risk. Prioritize clinician review and confirmatory cardiac workup.",
+                "next": "Admit or escalate according to local protocol.",
+            }
+        return {
+            "status": "low",
+            "title": "Low cardiac risk",
+            "action": "The full diagnostic profile is below the positive-risk threshold. Routine follow-up is still recommended.",
+            "next": "Discharge planning may be considered after clinician review.",
+        }
+
+    if probability <= LOW_THRESHOLD:
+        return {
+            "status": "low",
+            "title": "Low-risk discharge candidate",
+            "action": "Tier 1 vitals sit below the low-risk gate. No automatic lab escalation is required.",
+            "next": "Review clinically before discharge.",
+        }
+    if probability >= HIGH_THRESHOLD:
+        return {
+            "status": "high",
+            "title": "Danger zone detected",
+            "action": "Tier 1 vitals exceed the high-risk gate. The full Tier 2 diagnostic workflow is now active.",
+            "next": "Complete the lab panel immediately.",
+        }
+    return {
+        "status": "gray",
+        "title": "Uncertainty gate activated",
+        "action": "Tier 1 is inconclusive. The system requests additional labs before making a final routing decision.",
+        "next": "Complete the Tier 2 panel.",
+    }
 
 
-# ╔═══════════════════════════════════════════════════════════════╗
-# ║           SHAP EXPLAINABILITY + GenAI CLINICAL NOTE          ║
-# ╚═══════════════════════════════════════════════════════════════╝
+def format_pct(value: float | None) -> str:
+    return "--" if value is None else f"{value:.1%}"
 
-def _shap(model, X):
-    if shap is None:
+
+def status_color(status: str) -> str:
+    return {"low": "#168a4a", "gray": "#d97706", "high": "#c2413b"}.get(status, "#746c62")
+
+
+def metric_card(label: str, value: str, help_text: str) -> None:
+    st.markdown(
+        f"""
+<div class="metric-card">
+    <div class="metric-label">{escape(label)}</div>
+    <div class="metric-value">{escape(value)}</div>
+    <div class="metric-help">{escape(help_text)}</div>
+</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def section(title: str, pill: str) -> None:
+    st.markdown(
+        f"""
+<div class="section-head">
+    <div class="section-title"><div class="section-icon">+</div>{escape(title)}</div>
+    <div class="mini-pill">{escape(pill)}</div>
+</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def decision_card(probability: float, route: dict[str, str], label: str) -> None:
+    status = route["status"]
+    color = status_color(status)
+    st.markdown(
+        f"""
+<div class="decision {status}">
+    <div class="decision-top">
+        <div>
+            <div class="decision-kicker">{escape(label)}</div>
+            <div class="decision-title">{escape(route["title"])}</div>
+        </div>
+        <div class="decision-score" style="color:{color}">{probability:.1%}</div>
+    </div>
+    <p>{escape(route["action"])}</p>
+    <div class="gate-row">
+        <div class="gate {'active-low' if status == 'low' else ''}">0-30% Low risk</div>
+        <div class="gate {'active-gray' if status == 'gray' else ''}">30-70% Gray zone</div>
+        <div class="gate {'active-high' if status == 'high' else ''}">70-100% Danger zone</div>
+    </div>
+</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def gauge(probability: float, title: str) -> None:
+    if not HAS_PLOTLY:
+        st.progress(float(np.clip(probability, 0, 1)))
+        return
+
+    color = status_color(route_for_probability(probability)["status"])
+    fig = go.Figure(
+        go.Indicator(
+            mode="gauge+number",
+            value=probability * 100,
+            number={"suffix": "%", "font": {"size": 34, "color": "#28313a"}},
+            title={"text": title, "font": {"size": 15, "color": "#746c62"}},
+            gauge={
+                "axis": {"range": [0, 100], "tickcolor": "#9c9286"},
+                "bar": {"color": color, "thickness": 0.28},
+                "bgcolor": "rgba(255,255,255,0.65)",
+                "borderwidth": 1,
+                "bordercolor": "#eadfce",
+                "steps": [
+                    {"range": [0, 30], "color": "#e6f7ed"},
+                    {"range": [30, 70], "color": "#fff4d6"},
+                    {"range": [70, 100], "color": "#fee7e4"},
+                ],
+                "threshold": {"line": {"color": "#28313a", "width": 3}, "thickness": 0.75, "value": probability * 100},
+            },
+        )
+    )
+    fig.update_layout(
+        height=265,
+        margin=dict(l=18, r=18, t=48, b=12),
+        paper_bgcolor="rgba(0,0,0,0)",
+        font_family="Inter",
+    )
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+
+def shap_values_for(model: Any, frame: pd.DataFrame, background: pd.DataFrame | None = None) -> pd.DataFrame | None:
+    if not HAS_SHAP:
         return None
+
     try:
-        exp = shap.Explainer(model)
-        sv = exp(X.values)
-        c = sv.values[0]
-        return c[:, 1] if c.ndim == 2 else c
+        columns = list(frame.columns)
+        classes = list(getattr(model, "classes_", []))
+
+        def predict_positive(data: Any) -> np.ndarray:
+            data_frame = pd.DataFrame(data, columns=columns)
+            probabilities = model.predict_proba(data_frame)
+            positive_index = classes.index(1) if 1 in classes else probabilities.shape[1] - 1
+            return probabilities[:, positive_index]
+
+        if background is None or background.empty:
+            background = pd.DataFrame([{col: 0.0 for col in columns}], columns=columns)
+        else:
+            background = background.reindex(columns=columns, fill_value=0.0)
+
+        explainer = shap.Explainer(predict_positive, background, algorithm="permutation")
+        values = explainer(frame, max_evals=(2 * len(columns)) + 1)
+        raw = np.asarray(values.values)[0].astype(float)
+
+        result = pd.DataFrame(
+            {
+                "feature": frame.columns,
+                "label": [FEATURE_LABELS.get(col, col) for col in frame.columns],
+                "value": raw,
+            }
+        )
+        result["impact"] = result["value"].abs()
+        result["direction"] = np.where(result["value"] >= 0, "Raises risk", "Lowers risk")
+        return result.sort_values("impact", ascending=False).reset_index(drop=True)
     except Exception:
         return None
 
 
-def _ai_note(pct, contribs, names):
-    if OpenAI is None:
-        return None
-    key = os.getenv("open_router_api_key") or os.getenv("OPENROUTER_API_KEY")
-    if not key:
-        return None
+def plot_shap_bars(shap_df: pd.DataFrame) -> None:
+    top = shap_df.head(12).sort_values("impact", ascending=True)
+    colors = np.where(top["value"] >= 0, "#c2413b", "#168a4a")
 
-    factors = "\n".join(f"* {n}: {v:.4f}" for n, v in zip(names, contribs))
-    prompt = f"""You are a senior cardiologist with 20+ years of clinical experience explaining a heart health assessment to a patient during a consultation.
-
-Patient Information:
-* Predicted Heart Disease Risk: {pct:.1f}%
-
-Factors considered:
-{factors}
-
-Rules: Positive values = increased risk, negative = reduced risk. Focus on the 3-4 strongest factors. Explain naturally as a doctor would. Avoid ALL technical jargon, ML terms, SHAP values, probabilities, algorithms. Do not mention AI or computers.
-
-Style: Warm, professional, reassuring. Use "you" and "your". Sound like a real cardiologist. Include one lifestyle recommendation.
-
-Output: One paragraph, 120-180 words. Mention the risk percentage naturally. Return only the explanation."""
-
-    try:
-        client = OpenAI(api_key=key, base_url="https://openrouter.ai/api/v1")
-        r = client.chat.completions.create(
-            model="google/gemini-2.5-flash",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=500, top_p=0.9, temperature=0.3)
-        return r.choices[0].message.content
-    except Exception as e:
-        return f"Note generation error: {e}"
+    if HAS_PLOTLY:
+        fig = go.Figure(
+            go.Bar(
+                x=top["value"],
+                y=top["label"],
+                orientation="h",
+                marker_color=colors,
+                hovertemplate="%{y}<br>Contribution: %{x:.4f}<extra></extra>",
+            )
+        )
+        fig.add_vline(x=0, line_width=1, line_color="#9c9286")
+        fig.update_layout(
+            height=380,
+            margin=dict(l=8, r=8, t=14, b=22),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(255,255,255,.62)",
+            font_family="Inter",
+            xaxis_title="Local contribution",
+            yaxis_title=None,
+        )
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    else:
+        st.bar_chart(top.set_index("label")["value"])
 
 
-# ╔═══════════════════════════════════════════════════════════════╗
-# ║                 VISUALISATION FUNCTIONS                      ║
-# ╚═══════════════════════════════════════════════════════════════╝
+def plot_factor_balance(shap_df: pd.DataFrame) -> None:
+    raising = float(shap_df.loc[shap_df["value"] > 0, "impact"].sum())
+    lowering = float(shap_df.loc[shap_df["value"] < 0, "impact"].sum())
+    total = raising + lowering
 
-def _plotly_gauge(prob, title="Cardiac Risk Score"):
-    """Render a Plotly gauge / speedometer for probability."""
+    if total <= 0:
+        st.info("No factor balance available for this patient.")
+        return
+
+    if HAS_PLOTLY:
+        fig = go.Figure(
+            go.Pie(
+                labels=["Risk-raising factors", "Protective factors"],
+                values=[raising, lowering],
+                hole=.58,
+                marker_colors=["#c2413b", "#168a4a"],
+                textinfo="label+percent",
+            )
+        )
+        fig.update_layout(
+            height=315,
+            margin=dict(l=8, r=8, t=14, b=14),
+            paper_bgcolor="rgba(0,0,0,0)",
+            font_family="Inter",
+            showlegend=False,
+        )
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    else:
+        st.write(pd.DataFrame({"group": ["Risk-raising", "Protective"], "impact": [raising, lowering]}))
+
+
+def plot_patient_profile(inputs: dict[str, Any], refs: dict[str, dict[str, float]]) -> None:
     if not HAS_PLOTLY:
         return
-    color = "#16A34A" if prob < 0.3 else ("#D97706" if prob < 0.7 else "#DC2626")
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=round(prob * 100, 1),
-        number={"suffix": "%", "font": {"size": 38, "family": "Inter", "color": "#2D2A26"}},
-        title={"text": title, "font": {"size": 14, "family": "Inter", "color": "#6B5E50"}},
-        gauge={
-            "axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": "#E8DFD3",
-                     "tickfont": {"color": "#A89F93", "family": "Inter"}},
-            "bar": {"color": color, "thickness": 0.3},
-            "bgcolor": "#FFF6EC",
-            "borderwidth": 1, "bordercolor": "#E8DFD3",
-            "steps": [
-                {"range": [0, 30],  "color": "#DCFCE7"},
-                {"range": [30, 70], "color": "#FEF3C7"},
-                {"range": [70, 100],"color": "#FEE2E2"},
-            ],
-            "threshold": {"line": {"color": "#2D2A26", "width": 3}, "thickness": 0.8, "value": prob * 100},
-        }
-    ))
-    fig.update_layout(
-        height=220, margin=dict(l=30, r=30, t=40, b=10),
-        paper_bgcolor="rgba(0,0,0,0)", font={"family": "Inter"},
-    )
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
+    rows = []
+    for key, label in [
+        ("age", "Age"),
+        ("bp", "Resting BP"),
+        ("chol", "Cholesterol"),
+        ("thalch", "Max Heart Rate"),
+        ("oldpeak", "ST Depression"),
+    ]:
+        if key not in inputs:
+            continue
+        ref_key = "trestbps" if key == "bp" else key
+        rows.append({"Metric": label, "Scaled value": scale_value(inputs[key], ref_key, refs)})
 
-def _plotly_shap_bars(contribs, names):
-    """Horizontal SHAP contribution bar chart."""
-    if not HAS_PLOTLY or contribs is None:
+    if not rows:
         return
-    n = min(len(contribs), len(names))
-    vals = contribs[:n]
-    labs = names[:n]
 
-    # Sort by absolute value
-    order = np.argsort(np.abs(vals))
-    vals = vals[order]
-    labs = [labs[i] for i in order]
-
-    colors = ["#DC2626" if v > 0 else "#16A34A" for v in vals]
-
-    fig = go.Figure(go.Bar(
-        x=vals, y=labs, orientation="h",
-        marker_color=colors,
-        marker_line_width=0,
-        text=[f"{v:+.4f}" for v in vals],
-        textposition="outside",
-        textfont={"family": "Inter", "size": 11},
-    ))
+    fig = px.line_polar(
+        pd.DataFrame(rows),
+        r="Scaled value",
+        theta="Metric",
+        line_close=True,
+        range_r=[0, 1],
+    )
+    fig.update_traces(fill="toself", line_color="#eab308", fillcolor="rgba(234,179,8,.18)")
     fig.update_layout(
-        height=max(220, n * 34),
-        margin=dict(l=10, r=60, t=10, b=10),
+        height=330,
+        margin=dict(l=18, r=18, t=18, b=18),
         paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        xaxis=dict(showgrid=True, gridcolor="#F0E8DE", zeroline=True,
-                   zerolinecolor="#E8DFD3", zerolinewidth=2,
-                   tickfont={"family": "Inter", "color": "#A89F93"}),
-        yaxis=dict(tickfont={"family": "Inter", "color": "#2D2A26", "size": 12}),
-        font={"family": "Inter"},
+        polar=dict(
+            bgcolor="rgba(255,255,255,.65)",
+            radialaxis=dict(showticklabels=False, ticks="", gridcolor="#eadfce"),
+            angularaxis=dict(gridcolor="#eadfce"),
+        ),
+        font_family="Inter",
     )
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 
-def _plotly_pie(contribs, names):
-    """Pie chart: risk-increasing vs risk-decreasing factors."""
-    if not HAS_PLOTLY or contribs is None:
-        return
-    n = min(len(contribs), len(names))
-    pos = sum(c for c in contribs[:n] if c > 0)
-    neg = abs(sum(c for c in contribs[:n] if c < 0))
-    if pos + neg == 0:
-        return
-
-    fig = go.Figure(go.Pie(
-        labels=["Risk Factors", "Protective Factors"],
-        values=[pos, neg],
-        hole=0.55,
-        marker=dict(colors=["#FEE2E2", "#DCFCE7"],
-                    line=dict(color=["#DC2626", "#16A34A"], width=2)),
-        textinfo="label+percent",
-        textfont=dict(family="Inter", size=12, color="#2D2A26"),
-        hoverinfo="label+value",
-    ))
-    fig.update_layout(
-        height=260,
-        margin=dict(l=10, r=10, t=10, b=10),
-        paper_bgcolor="rgba(0,0,0,0)",
-        font={"family": "Inter"},
-        showlegend=False,
-        annotations=[dict(text="SHAP", x=0.5, y=0.5, font_size=14,
-                          font_family="Inter", font_color="#A89F93", showarrow=False)],
+def local_clinical_note(probability: float, shap_df: pd.DataFrame | None) -> str:
+    risk_text = "low" if probability < 0.5 else "elevated"
+    base = (
+        f"Your overall cardiac risk estimate is {probability:.1%}, which falls in the {risk_text} range for this screening workflow. "
     )
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    if shap_df is None or shap_df.empty:
+        return (
+            base
+            + "The result should be interpreted by a licensed clinician alongside symptoms, examination findings, and local care protocols. "
+            + "Maintain heart-healthy habits and arrange follow-up if symptoms persist or worsen."
+        )
+
+    top_risk = shap_df[shap_df["value"] > 0].head(2)["label"].tolist()
+    top_protective = shap_df[shap_df["value"] < 0].head(2)["label"].tolist()
+
+    parts = [base]
+    if top_risk:
+        parts.append("The main factors pushing risk upward are " + ", ".join(top_risk).lower() + ". ")
+    if top_protective:
+        parts.append("Reassuring factors include " + ", ".join(top_protective).lower() + ". ")
+    parts.append(
+        "This is clinical decision support, not a diagnosis. A clinician should confirm the result and decide whether additional testing or treatment is needed."
+    )
+    return "".join(parts)
 
 
-# ╔═══════════════════════════════════════════════════════════════╗
-# ║                 HTML CARD RENDERERS                          ║
-# ╚═══════════════════════════════════════════════════════════════╝
+def ai_clinical_note(probability: float, shap_df: pd.DataFrame | None) -> str:
+    if not HAS_OPENAI:
+        return local_clinical_note(probability, shap_df)
 
-def _mc(label, value, detail, tone="gold"):
-    st.markdown(f"""<div class="metric-card t-{escape(tone)}">
-        <div class="mc-label">{escape(label)}</div>
-        <div class="mc-value">{escape(str(value))}</div>
-        <div class="mc-detail">{escape(detail)}</div>
-    </div>""", unsafe_allow_html=True)
+    api_key = os.getenv("open_router_api_key") or os.getenv("OPENROUTER_API_KEY")
+    if not api_key or shap_df is None or shap_df.empty:
+        return local_clinical_note(probability, shap_df)
+
+    factors = "\n".join(
+        f"- {row.label}: {row.value:.4f}"
+        for row in shap_df.head(8).itertuples(index=False)
+    )
+    prompt = f"""
+You are a highly experienced Consultant Cardiologist (20+ years of clinical practice) conducting an in-person consultation with a patient after reviewing their cardiovascular assessment.
+
+Your responsibility is to explain the assessment exactly as an experienced physician would during a hospital consultation.
+
+The patient is NOT a medical professional.
+
+--------------------------------------------------
+PATIENT ASSESSMENT
+--------------------------------------------------
+
+Estimated Heart Disease Risk:
+{probability * 100:.1f}%
+
+Clinical Findings:
+{factors}
+
+Interpretation of Findings:
+• Positive contribution → increases the estimated risk.
+• Negative contribution → decreases the estimated risk.
+
+--------------------------------------------------
+YOUR TASK
+--------------------------------------------------
+
+Write ONE natural clinical explanation for the patient.
+
+The explanation should sound exactly like a compassionate, experienced cardiologist speaking face-to-face with the patient.
+
+The patient should finish reading it feeling:
+
+• informed
+• reassured
+• educated
+• aware of the important findings
+
+without feeling frightened or confused.
+
+--------------------------------------------------
+IMPORTANT MEDICAL INSTRUCTIONS
+--------------------------------------------------
+
+Explain ONLY the 3–4 findings with the greatest influence.
+
+For every important finding:
+
+1. State WHAT was observed.
+2. Explain WHY that finding matters medically.
+3. Explain HOW it influences the patient's estimated heart risk.
+4. Explain whether it is reassuring or concerning.
+
+Always balance positive and negative findings.
+
+Never exaggerate.
+
+Never create unnecessary alarm.
+
+Never guarantee that the patient has or does not have heart disease.
+
+Present the assessment as a probability—not a diagnosis.
+
+Whenever possible, explain medical concepts using everyday language.
+
+For example:
+
+Instead of
+
+"Flat ST slope"
+
+say something similar to
+
+"The electrical changes seen during your exercise test suggest that your heart may not respond to physical activity as efficiently as expected."
+
+Likewise,
+
+instead of
+
+"Exercise Angina: No"
+
+say
+
+"It's reassuring that you do not experience chest discomfort during physical activity, which lowers the likelihood of significant heart-related symptoms."
+
+Translate EVERY technical feature into language an average patient can understand.
+
+--------------------------------------------------
+STRICT RULES
+--------------------------------------------------
+
+DO NOT mention:
+
+• SHAP
+• Machine Learning
+• Artificial Intelligence
+• AI
+• Algorithm
+• Model
+• Feature importance
+• Contribution values
+• Weights
+• Data analysis
+• Prediction engine
+• Probability model
+
+Never mention any numerical contribution values.
+
+Never mention internal feature names.
+
+Never write raw labels such as
+
+"Chest Pain: Asymptomatic"
+
+"Slope: Flat"
+
+"Major Vessels"
+
+"Oldpeak"
+
+"Thal"
+
+"CA"
+
+Translate everything into natural medical language.
+
+Never list raw medical variables.
+
+Never sound like software.
+
+Never sound like ChatGPT.
+
+Never sound like an AI assistant.
+
+Never say:
+
+"Based on our assessment..."
+
+"Let's break this down..."
+
+"The model predicts..."
+
+"The analysis indicates..."
+
+"Our assessment suggests..."
+
+Instead, speak naturally as a doctor.
+
+--------------------------------------------------
+STYLE
+--------------------------------------------------
+
+Use "you" throughout.
+
+Professional.
+
+Warm.
+
+Confident.
+
+Reassuring.
+
+Human.
+
+Conversational.
+
+Natural.
+
+Avoid repetitive sentence structures.
+
+Vary sentence length.
+
+Avoid generic advice.
+
+Every recommendation should relate to the patient's findings whenever possible.
+
+--------------------------------------------------
+STRUCTURE
+--------------------------------------------------
+
+Paragraph 1
+Briefly explain the estimated risk in one natural sentence.
+
+Paragraph 2
+
+Provide 3–4 bullet points.
+
+Each bullet should contain:
+
+• an appropriate emoji
+• the observation
+• why it matters
+• whether it increases or decreases risk
+
+Do NOT include technical terminology unless immediately explained.
+
+Paragraph 3
+
+Give one personalized lifestyle recommendation based on the findings.
+
+Avoid generic advice.
+
+Instead of saying
+
+"eat healthy"
+
+say something meaningful such as
+
+"Because your exercise test showed changes that deserve attention, maintaining regular moderate physical activity, together with controlling blood pressure and cholesterol, can help reduce future cardiovascular risk."
+
+Paragraph 4
+
+End with a reassuring conclusion that encourages regular follow-up without creating fear.
+
+--------------------------------------------------
+OUTPUT REQUIREMENTS
+--------------------------------------------------
+
+Length:
+140–180 words.
+
+Formatting:
+One opening paragraph.
+3–4 bullet points.
+One recommendation paragraph.
+One closing paragraph.
+
+Output ONLY the final explanation.
+
+No headings.
+
+No markdown.
+
+No code fences.
+
+No introductory text.
+
+The response must be indistinguishable from what an experienced cardiologist would say during a real clinical consultation.
+
+"""
+
+    try:
+        client = OpenAI(api_key=api_key, base_url="https://openrouter.ai/api/v1")
+        response = client.chat.completions.create(
+            model="google/gemini-2.5-flash",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=350,
+            temperature=0.45,
+            frequency_penalty=0.15,
+            presence_penalty=0.05,
+            top_p=0.92,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception:
+        return local_clinical_note(probability, shap_df)
 
 
-def _result_card(prob, route):
-    s = route["status"]
-    tag = {"low": "Low Risk", "gray": "Gray Zone", "high": "High Risk"}.get(s, "")
-    st.markdown(f"""<div class="result-box s-{escape(s)} fade-in">
-        <span class="result-tag">{route["icon"]}  {tag}</span>
-        <div class="risk-pct">{prob:.1%}</div>
-        <div class="result-title">{escape(route["title"])}</div>
-        <p class="result-desc">{escape(route["action"])}</p>
-        <div class="result-next">&#8594; {escape(route["next"])}</div>
-    </div>""", unsafe_allow_html=True)
-
-
-def _gate_pills(prob, lo, hi):
-    st.markdown(f"""<div class="gate-row">
-        <div class="gate-pill"><span class="gp-label">Discharge</span><span class="gp-val">&le; {lo:.2f}</span></div>
-        <div class="gate-pill"><span class="gp-label">P(Sick)</span><span class="gp-val" style="color:var(--gold-600)">{prob:.3f}</span></div>
-        <div class="gate-pill"><span class="gp-label">Escalation</span><span class="gp-val">&ge; {hi:.2f}</span></div>
-    </div>""", unsafe_allow_html=True)
-
-
-def _sec(icon, title, color="gold"):
-    st.markdown(f"""<div class="sec-hdr">
-        <div class="sec-icon {escape(color)}">{icon}</div>
-        <h3>{escape(title)}</h3>
-    </div>""", unsafe_allow_html=True)
-
-
-def _ai_box(text):
-    st.markdown(f"""<div class="ai-note fade-in">
-        <div class="ai-note-hdr">
-            <div class="ai-note-icon">🤖</div>
-            <h4>AI Clinical Note</h4>
-            <span class="ai-badge">GEMINI 2.5</span>
+def note_box(text: str, live: bool = False) -> None:
+    badge = "GENAI" if live else "LOCAL NOTE"
+    st.markdown(
+        f"""
+<div class="note-card">
+    <div class="note-inner">
+        <div class="note-header">
+            <div class="note-title">AI Clinical Note</div>
+            <div class="note-badge">{badge}</div>
         </div>
-        <div class="ai-note-body">{escape(text)}</div>
-    </div>""", unsafe_allow_html=True)
-
-
-# ╔═══════════════════════════════════════════════════════════════╗
-# ║                        MAIN APP                              ║
-# ╚═══════════════════════════════════════════════════════════════╝
-
-def main():
-    st.set_page_config(
-        page_title="Smart Clinic Triage Engine",
-        page_icon="🏥",
-        layout="wide",
-        initial_sidebar_state="collapsed",
+        <div class="note-body">{escape(text)}</div>
+    </div>
+</div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    inject_css()
 
-    # ── Session state init ──
-    for k, v in {
-        "tier": None,           # None | "done_t1" | "need_t2" | "done_t2"
+def initialize_state() -> None:
+    defaults = {
+        "tier_state": "idle",
         "t1_prob": None,
         "t1_route": None,
-        "t1_data": {},
         "t2_prob": None,
         "t2_route": None,
-        "shap_vals": None,
-        "ai_note_text": None,
-    }.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
+        "t1_inputs": {},
+        "t2_inputs": {},
+        "shap_df": None,
+        "clinical_note": None,
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
-    # ── Load resources ──
-    t1_model = _load_model(TIER1_MODEL_PATH)
-    t2_model = _load_model(TIER2_MODEL_PATH)
-    dataset  = _load_csv()
-    refs     = _ref_ranges(dataset) if not dataset.empty else REF_RANGES
 
-    # ════════════════════════════════════════════════
-    #                  HERO BANNER
-    # ════════════════════════════════════════════════
-    st.markdown("""
-    <div class="hero-banner">
-        <div class="hero-eyebrow"><span class="pulse-dot"></span>Smart Clinic Triage Engine</div>
-        <h1 class="hero-title">🏥  AI-Driven, Cost-Aware Diagnostic Assistant</h1>
-        <p class="hero-sub">
-            Two-tier cascade routing engine — triages patients using free intake vitals first,
-            triggering expensive lab work only when clinically necessary. Machine learning decisions
-            are translated into plain-English clinical notes via Generative AI.
-        </p>
+def reset_downstream() -> None:
+    st.session_state.t2_prob = None
+    st.session_state.t2_route = None
+    st.session_state.t2_inputs = {}
+    st.session_state.shap_df = None
+    st.session_state.clinical_note = None
+
+
+def main() -> None:
+    inject_css()
+    inject_reactbits_side_rays()
+    initialize_state()
+
+    tier1_model = load_model(TIER1_MODEL_PATH)
+    tier2_model = load_model(TIER2_MODEL_PATH)
+    dataset = load_dataset()
+    refs = reference_ranges(dataset)
+
+    def run_tier1() -> None:
+        if tier1_model is None:
+            st.session_state.t1_route = {
+                "status": "gray",
+                "title": "Tier 1 model missing",
+                "action": "Tier_1_model.pkl was not found. Add the model file and run again.",
+                "next": "Model unavailable.",
+            }
+            return
+
+        inputs = {
+            "age": int(st.session_state.age),
+            "sex": st.session_state.sex,
+            "cp": st.session_state.cp,
+            "bp": int(st.session_state.bp),
+        }
+        frame = tier1_vector(inputs["age"], inputs["sex"], inputs["cp"], inputs["bp"], refs)
+        probability = predict_probability(tier1_model, frame)
+        route = route_for_probability(probability)
+
+        st.session_state.t1_inputs = inputs
+        st.session_state.t1_prob = probability
+        st.session_state.t1_route = route
+        reset_downstream()
+
+        if route["status"] in {"gray", "high"}:
+            st.session_state.tier_state = "tier2_required"
+        else:
+            st.session_state.tier_state = "tier1_complete"
+
+    def run_tier2() -> None:
+        if tier2_model is None:
+            st.session_state.t2_route = {
+                "status": "gray",
+                "title": "Tier 2 model missing",
+                "action": "Tier_2_model.pkl was not found. Add the model file and run again.",
+                "next": "Model unavailable.",
+            }
+            return
+
+        if not st.session_state.t1_inputs:
+            run_tier1()
+
+        t1 = st.session_state.t1_inputs
+        t2 = {
+            "chol": int(st.session_state.chol),
+            "fbs": bool(st.session_state.fbs),
+            "restecg": st.session_state.restecg,
+            "thalch": int(st.session_state.thalch),
+            "exang": bool(st.session_state.exang),
+            "oldpeak": float(st.session_state.oldpeak),
+            "slope": st.session_state.slope,
+            "ca": int(st.session_state.ca),
+            "thal": st.session_state.thal,
+        }
+        frame = tier2_vector(tier2_model, refs, **t1, **t2)
+        probability = predict_probability(tier2_model, frame)
+        route = route_for_probability(probability, final=True)
+        background = tier2_background_frame(tier2_model, refs, dataset)
+        shap_df = shap_values_for(tier2_model, frame, background)
+        note = ai_clinical_note(probability, shap_df)
+
+        st.session_state.t2_inputs = t2
+        st.session_state.t2_prob = probability
+        st.session_state.t2_route = route
+        st.session_state.shap_df = shap_df
+        st.session_state.clinical_note = note
+        st.session_state.tier_state = "tier2_complete"
+
+    st.markdown(
+        """
+<div class="hero">
+    <div class="hero-inner">
+        <div class="eyebrow"><span class="pulse-dot"></span>Smart Clinic Assistant</div>
+        <h1 class="hero-title">Cost-aware cardiac triage, built for clinical flow.</h1>
+        <div class="hero-copy">
+            A two-tier machine learning cascade screens with basic vitals first, then unlocks the full diagnostic panel only when the patient enters the gray zone or danger zone.
+        </div>
     </div>
-    """, unsafe_allow_html=True)
+</div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    # ── Status cards ──
-    s1, s2, s3, s4 = st.columns(4)
-    with s1:
-        _mc("Patient Records", f"{len(dataset):,}" if not dataset.empty else "—",
-            "UCI Cleveland Dataset", "blue")
-    with s2:
-        prev = dataset["target_binary"].mean() if not dataset.empty else 0
-        _mc("Prevalence", f"{prev:.1%}", "Observed disease rate", "red")
-    with s3:
-        _mc("Tier 1 Model", "Loaded" if t1_model else "Missing",
-            "RF Gatekeeper", "green" if t1_model else "amber")
-    with s4:
-        _mc("Tier 2 Model", "Ready" if t2_model else "Pending",
-            "RF Tie-Breaker", "green" if t2_model else "amber")
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        metric_card("Patient Records", f"{len(dataset):,}" if not dataset.empty else "--", "UCI heart disease records")
+    with k2:
+        if "target_binary" in dataset:
+            metric_card("Dataset Prevalence", f"{dataset['target_binary'].mean():.1%}", "Observed positive target rate")
+        else:
+            metric_card("Dataset Prevalence", "--", "Dataset unavailable")
+    with k3:
+        metric_card("Tier 1 Model", "Ready" if tier1_model is not None else "Missing", "Vitals gatekeeper")
+    with k4:
+        metric_card("Tier 2 Model", "Ready" if tier2_model is not None else "Missing", "Full diagnostic panel")
 
-    st.markdown("<div style='height:0.8rem'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:.85rem'></div>", unsafe_allow_html=True)
 
-    # ════════════════════════════════════════════════
-    #          MAIN 2-COLUMN LAYOUT
-    # ════════════════════════════════════════════════
-    col_L, col_R = st.columns([1, 1.15], gap="large")
+    left, right = st.columns([1.0, 1.12], gap="large")
 
-    # ────────────────────────────────────────────
-    #  LEFT COLUMN — DATA ENTRY
-    # ────────────────────────────────────────────
-    with col_L:
-
-        # ── Outer Box → Tier 1 Form ──
-        _sec("🩺", "Tier 1 — Patient Vitals", "gold")
-
-        st.markdown('<div class="outer-box">', unsafe_allow_html=True)
-        st.markdown('<div class="inner-card">', unsafe_allow_html=True)
-
-        with st.form("t1_form", clear_on_submit=False):
+    with left:
+        section("Tier 1 intake", "Free vitals")
+        with st.container(border=True):
             c1, c2 = st.columns(2)
             with c1:
-                age = st.number_input("Age", 18, 100, 54, help="Patient's age in years")
-                cp  = st.selectbox("Chest Pain Type", CP_OPTS, help="Clinical chest pain classification")
+                st.number_input("Age", min_value=18, max_value=100, value=54, step=1, key="age")
+                st.selectbox("Chest pain type", CP_OPTIONS, index=0, key="cp")
             with c2:
-                sex = st.selectbox("Sex", SEX_OPTS, index=1)
-                bp  = st.slider("Resting Blood Pressure (mm Hg)", 80, 220, 130)
+                st.selectbox("Sex", SEX_OPTIONS, index=1, key="sex")
+                st.slider("Resting blood pressure", min_value=80, max_value=220, value=130, step=1, key="bp")
 
-            t1_go = st.form_submit_button("🔬  Run Initial Triage")
+            if tier1_model is None:
+                st.error("Tier_1_model.pkl is missing from the project folder.")
 
-        st.markdown('</div></div>', unsafe_allow_html=True)
+            if st.button("Run initial triage", use_container_width=True):
+                run_tier1()
+                st.rerun()
 
-        # ── Process Tier 1 ──
-        if t1_go:
-            if t1_model is None:
-                st.error("Tier 1 model (Tier_1_model.pkl) not found.")
-            else:
-                vec = _t1_vec(age, sex, cp, bp, refs)
-                prob = _prob(t1_model, vec)
-                route = _route(prob)
-
-                st.session_state.t1_prob  = prob
-                st.session_state.t1_route = route
-                st.session_state.t1_data  = {"age": age, "sex": sex, "cp": cp, "bp": bp}
-
-                # ★ Auto-launch Tier 2 for gray AND high risk
-                if route["status"] in ("gray", "high"):
-                    st.session_state.tier = "need_t2"
+        if st.session_state.tier_state in {"tier2_required", "tier2_complete"}:
+            st.markdown("<div style='height:.25rem'></div>", unsafe_allow_html=True)
+            section("Tier 2 diagnostics", "Auto-launched")
+            with st.container(border=True):
+                if st.session_state.t1_route and st.session_state.t1_route["status"] == "high":
+                    st.warning("Danger zone detected from Tier 1. The Tier 2 diagnostic panel has been launched automatically.")
                 else:
-                    st.session_state.tier = "done_t1"
-                    # Clear previous Tier 2 results
-                    st.session_state.t2_prob = None
-                    st.session_state.t2_route = None
-                    st.session_state.shap_vals = None
-                    st.session_state.ai_note_text = None
+                    st.info("Gray zone detected from Tier 1. Add labs and stress-test findings for the final decision.")
 
-        # ── Tier 2 Form — Auto-launches for gray/high ──
-        if st.session_state.tier in ("need_t2", "done_t2"):
+                d1, d2 = st.columns(2)
+                with d1:
+                    st.number_input("Serum cholesterol", min_value=50, max_value=700, value=220, step=1, key="chol")
+                    st.selectbox(
+                        "Fasting blood sugar > 120 mg/dL",
+                        [False, True],
+                        format_func=lambda value: "Yes" if value else "No",
+                        key="fbs",
+                    )
+                    st.selectbox("Resting ECG", RESTECG_OPTIONS, index=0, key="restecg")
+                    st.number_input("Maximum heart rate", min_value=50, max_value=250, value=150, step=1, key="thalch")
+                with d2:
+                    st.selectbox(
+                        "Exercise-induced angina",
+                        [False, True],
+                        format_func=lambda value: "Yes" if value else "No",
+                        key="exang",
+                    )
+                    st.number_input("ST depression", min_value=-3.0, max_value=7.0, value=1.0, step=0.1, key="oldpeak")
+                    st.selectbox("Slope of peak exercise ST", SLOPE_OPTIONS, index=1, key="slope")
+                    st.selectbox("Major vessels colored", [0, 1, 2, 3], index=0, key="ca")
+                st.selectbox("Thalassemia", THAL_OPTIONS, index=0, key="thal")
 
-            st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
-            _sec("🧪", "Tier 2 — Full Diagnostic Panel", "amber")
+                if tier2_model is None:
+                    st.error("Tier_2_model.pkl is missing from the project folder.")
 
-            status = st.session_state.t1_route["status"] if st.session_state.t1_route else "gray"
-            if status == "gray":
-                st.warning("⚡ **Uncertainty Gate activated** — Initial triage is inconclusive. "
-                           "Provide the lab results below for a definitive diagnosis.")
-            else:
-                st.info("🔍 **Full workup recommended** — High-risk vitals detected. "
-                        "Complete lab panel for comprehensive cardiac assessment.")
+                if st.button("Run final diagnosis", use_container_width=True):
+                    run_tier2()
+                    st.rerun()
 
-            st.markdown('<div class="outer-box fade-in">', unsafe_allow_html=True)
-            st.markdown('<div class="inner-card">', unsafe_allow_html=True)
+    with right:
+        section("Decision dashboard", "Live output")
 
-            with st.form("t2_form", clear_on_submit=False):
-                r1, r2 = st.columns(2)
-                with r1:
-                    chol = st.number_input("Serum Cholesterol (mg/dL)", 50, 700, 220,
-                                           help="Total cholesterol level")
-                    fbs  = st.selectbox("Fasting Blood Sugar > 120 mg/dL", [False, True],
-                                        format_func=lambda v: "Yes" if v else "No")
-                    ecg  = st.selectbox("Resting ECG Result", RESTECG_OPTS,
-                                        help="Electrocardiogram classification")
-                    thalch = st.number_input("Max Heart Rate", 50, 250, 150,
-                                             help="Maximum heart rate achieved during exercise")
-                with r2:
-                    exang = st.selectbox("Exercise-Induced Angina", [False, True],
-                                         format_func=lambda v: "Yes" if v else "No")
-                    oldpeak = st.number_input("ST Depression (Oldpeak)", 0.0, 7.0, 1.0, 0.1,
-                                              help="ST depression induced by exercise vs rest")
-                    slope = st.selectbox("Slope of Peak Exercise ST", SLOPE_OPTS)
-                    ca = st.selectbox("Major Vessels (Fluoroscopy)", [0, 1, 2, 3],
-                                      help="Number of major vessels colored (0-3)")
-
-                thal = st.selectbox("Thalassemia", THAL_OPTS, index=1)
-
-                t2_go = st.form_submit_button("🎯  Run Final Diagnosis")
-
-            st.markdown('</div></div>', unsafe_allow_html=True)
-
-            # ── Process Tier 2 ──
-            if t2_go:
-                if t2_model is None:
-                    st.error("Tier 2 model (Tier_2_model.pkl) not found.")
-                else:
-                    p = st.session_state.t1_data
-                    vec2 = _t2_vec(
-                        p["age"], p["sex"], p["cp"], p["bp"],
-                        chol, fbs, ecg, thalch,
-                        exang, oldpeak, slope, ca, thal,
-                        refs, t2_model)
-                    prob2 = _prob(t2_model, vec2)
-
-                    if prob2 >= 0.5:
-                        route2 = {"status": "high",
-                                  "title": "Positive Cardiac Risk — Admit & Evaluate",
-                                  "action": "Full lab analysis confirms elevated cardiac risk. Cardiology consult recommended.",
-                                  "next": "Proceed with confirmatory cardiac workup.", "icon": "🚨"}
-                    else:
-                        route2 = {"status": "low",
-                                  "title": "Low Cardiac Risk — Safe for Discharge",
-                                  "action": "Full lab profile confirms low cardiac risk. Standard follow-up recommended.",
-                                  "next": "Schedule routine follow-up.", "icon": "✅"}
-
-                    st.session_state.t2_prob  = prob2
-                    st.session_state.t2_route = route2
-                    st.session_state.tier     = "done_t2"
-
-                    # SHAP
-                    sv = _shap(t2_model, vec2)
-                    st.session_state.shap_vals = sv
-
-                    # AI Note
-                    if sv is not None:
-                        n = min(8, len(sv))
-                        note = _ai_note(prob2 * 100, sv[:n], SHAP_LABELS[:n])
-                        st.session_state.ai_note_text = note
-
-    # ────────────────────────────────────────────
-    #  RIGHT COLUMN — OUTPUT DASHBOARD
-    # ────────────────────────────────────────────
-    with col_R:
-
-        _sec("📊", "Triage Decision Dashboard", "blue")
-
-        # ── Empty state ──
         if st.session_state.t1_prob is None:
-            st.markdown("""<div class="outer-box empty-state">
-                <div class="icon">🏥</div>
-                <h3>Awaiting Patient Data</h3>
-                <p>Enter vitals on the left and click <b>"Run Initial Triage"</b> to begin.</p>
-            </div>""", unsafe_allow_html=True)
-
+            st.markdown(
+                """
+<div class="outer-card empty-state">
+    <div class="empty-icon">SC</div>
+    <h3>Awaiting patient intake</h3>
+    <p>Enter Tier 1 vitals and run the initial triage. The lab panel will open automatically for gray-zone and danger-zone cases.</p>
+</div>
+                """,
+                unsafe_allow_html=True,
+            )
         else:
-            # ════  TIER 1 RESULTS  ════
-            st.markdown("""<div class="outer-box fade-in">""", unsafe_allow_html=True)
+            with st.container(border=True):
+                decision_card(st.session_state.t1_prob, st.session_state.t1_route, "Tier 1 gatekeeper")
+                gauge(st.session_state.t1_prob, "Tier 1 cardiac risk")
 
-            st.markdown("""<div class="sec-hdr" style="margin-top:0">
-                <div class="sec-icon gold">🔬</div>
-                <h3>Tier 1 — Gatekeeper Assessment</h3>
-            </div>""", unsafe_allow_html=True)
+            if st.session_state.tier_state == "tier2_required":
+                st.markdown(
+                    """
+<div class="outer-card empty-state">
+    <div class="empty-icon">T2</div>
+    <h3>Tier 2 panel is active</h3>
+    <p>The patient requires full diagnostic review. Complete the Tier 2 inputs on the left and run the final diagnosis.</p>
+</div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
-            st.markdown('<div class="inner-card">', unsafe_allow_html=True)
-            _result_card(st.session_state.t1_prob, st.session_state.t1_route)
-            st.progress(float(np.clip(st.session_state.t1_prob, 0, 1)))
-            _gate_pills(st.session_state.t1_prob, LOW_THRESHOLD, HIGH_THRESHOLD)
-            st.markdown('</div>', unsafe_allow_html=True)
-
-            # Tier 1 Gauge
-            if HAS_PLOTLY:
-                st.markdown('<div class="inner-card" style="margin-top:0.8rem">', unsafe_allow_html=True)
-                _plotly_gauge(st.session_state.t1_prob, "Tier 1 Risk Score")
-                st.markdown('</div>', unsafe_allow_html=True)
-
-            st.markdown('</div>', unsafe_allow_html=True)  # close outer-box
-
-            # ════  TIER 2 RESULTS  ════
             if st.session_state.t2_prob is not None:
-                st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
-                st.markdown("""<div class="outer-box fade-in">""", unsafe_allow_html=True)
+                with st.container(border=True):
+                    decision_card(st.session_state.t2_prob, st.session_state.t2_route, "Tier 2 final diagnosis")
+                    gauge(st.session_state.t2_prob, "Tier 2 final risk")
 
-                st.markdown("""<div class="sec-hdr" style="margin-top:0">
-                    <div class="sec-icon amber">🎯</div>
-                    <h3>Tier 2 — Definitive Diagnosis</h3>
-                </div>""", unsafe_allow_html=True)
+                profile_inputs = {**st.session_state.t1_inputs, **st.session_state.t2_inputs}
+                with st.container(border=True):
+                    st.caption("Patient profile scaled against the training reference ranges.")
+                    plot_patient_profile(profile_inputs, refs)
 
-                st.markdown('<div class="inner-card">', unsafe_allow_html=True)
-                _result_card(st.session_state.t2_prob, st.session_state.t2_route)
-                st.progress(float(np.clip(st.session_state.t2_prob, 0, 1)))
-                st.markdown('</div>', unsafe_allow_html=True)
+                if isinstance(st.session_state.shap_df, pd.DataFrame) and not st.session_state.shap_df.empty:
+                    with st.container(border=True):
+                        st.caption("Top local drivers. Red raises risk; green lowers risk.")
+                        plot_shap_bars(st.session_state.shap_df)
 
-                # Comparison cards
-                m1, m2 = st.columns(2)
-                with m1:
-                    st.markdown('<div class="inner-card" style="margin-top:0.6rem">', unsafe_allow_html=True)
-                    _mc("Tier 1 Risk", f"{st.session_state.t1_prob:.1%}", "Gatekeeper score", "amber")
-                    st.markdown('</div>', unsafe_allow_html=True)
-                with m2:
-                    t2t = "red" if st.session_state.t2_prob >= 0.5 else "green"
-                    st.markdown('<div class="inner-card" style="margin-top:0.6rem">', unsafe_allow_html=True)
-                    _mc("Tier 2 Final", f"{st.session_state.t2_prob:.1%}", "Definitive score", t2t)
-                    st.markdown('</div>', unsafe_allow_html=True)
-
-                # Tier 2 Gauge
-                if HAS_PLOTLY:
-                    st.markdown('<div class="inner-card" style="margin-top:0.6rem">', unsafe_allow_html=True)
-                    _plotly_gauge(st.session_state.t2_prob, "Tier 2 Risk Score")
-                    st.markdown('</div>', unsafe_allow_html=True)
-
-                st.markdown('</div>', unsafe_allow_html=True)  # close outer-box
-
-                # ════  SHAP ANALYSIS  ════
-                if st.session_state.shap_vals is not None:
-                    st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
-                    st.markdown("""<div class="outer-box fade-in">""", unsafe_allow_html=True)
-
-                    st.markdown("""<div class="sec-hdr" style="margin-top:0">
-                        <div class="sec-icon purple">📈</div>
-                        <h3>SHAP Feature Attribution</h3>
-                    </div>""", unsafe_allow_html=True)
-
-                    # Bar chart
-                    st.markdown('<div class="inner-card">', unsafe_allow_html=True)
-                    st.caption("**Contribution of each clinical factor** — Red bars increase risk, green bars reduce it.")
-                    _plotly_shap_bars(st.session_state.shap_vals, SHAP_LABELS)
-                    st.markdown('</div>', unsafe_allow_html=True)
-
-                    # Pie chart
-                    st.markdown('<div class="inner-card" style="margin-top:0.6rem">', unsafe_allow_html=True)
-                    st.caption("**Risk vs. Protective Factor Balance**")
-                    _plotly_pie(st.session_state.shap_vals, SHAP_LABELS)
-                    st.markdown('</div>', unsafe_allow_html=True)
-
-                    # Top factors table
-                    n = min(8, len(st.session_state.shap_vals))
-                    sv = st.session_state.shap_vals[:n]
-                    tbl = pd.DataFrame({
-                        "Factor": SHAP_LABELS[:n],
-                        "SHAP Value": [f"{v:+.4f}" for v in sv],
-                        "Direction": ["↑ Risk" if v > 0 else "↓ Protective" for v in sv],
-                        "|Impact|": [f"{abs(v):.4f}" for v in sv],
-                    })
-                    with st.expander("📋 Detailed Factor Table", expanded=False):
-                        st.dataframe(tbl, use_container_width=True, hide_index=True)
-
-                    st.markdown('</div>', unsafe_allow_html=True)  # close outer-box
-
-                # ════  AI CLINICAL NOTE  ════
-                if st.session_state.ai_note_text:
-                    st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
-                    _ai_box(st.session_state.ai_note_text)
+                    s_col1, s_col2 = st.columns([.9, 1.1], gap="medium")
+                    with s_col1:
+                        with st.container(border=True):
+                            st.caption("Risk vs protective contribution balance.")
+                            plot_factor_balance(st.session_state.shap_df)
+                    with s_col2:
+                        with st.container(border=True):
+                            display_df = st.session_state.shap_df.head(10).copy()
+                            display_df = display_df[["label", "value", "direction", "impact"]]
+                            display_df.columns = ["Factor", "Contribution", "Direction", "Impact"]
+                            st.dataframe(
+                                display_df,
+                                use_container_width=True,
+                                hide_index=True,
+                                column_config={
+                                    "Contribution": st.column_config.NumberColumn(format="%.4f"),
+                                    "Impact": st.column_config.NumberColumn(format="%.4f"),
+                                },
+                            )
                 else:
-                    api_key = os.getenv("open_router_api_key") or os.getenv("OPENROUTER_API_KEY")
-                    if not api_key and st.session_state.t2_prob is not None:
-                        st.markdown("""<div class="ai-note fade-in" style="opacity:0.7; margin-top:0.6rem">
-                            <div class="ai-note-hdr">
-                                <div class="ai-note-icon">🤖</div>
-                                <h4>AI Clinical Note</h4>
-                                <span class="ai-badge" style="background:var(--amber-100);color:var(--amber-600)">OFFLINE</span>
-                            </div>
-                            <div class="ai-note-body" style="color:var(--text-muted)">
-                                Set the <code style="background:var(--bg-inner);padding:2px 6px;border-radius:4px">open_router_api_key</code>
-                                environment variable to enable AI-generated clinical notes via Gemini 2.5 Flash.
-                            </div>
-                        </div>""", unsafe_allow_html=True)
+                    with st.container(border=True):
+                        st.info("SHAP is unavailable for this model/runtime. The final risk score is still shown above.")
 
-            # ── Gray zone waiting message ──
-            elif st.session_state.tier == "need_t2" and st.session_state.t2_prob is None:
-                st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
-                st.markdown("""<div class="outer-box fade-in empty-state"
-                     style="background:linear-gradient(135deg, rgba(234,179,8,0.04), rgba(245,158,11,0.03))">
-                    <div class="icon">🧪</div>
-                    <h3 style="color:var(--gold-600) !important">Tier 2 Panel Active</h3>
-                    <p>The lab panel has been revealed on the left. Enter results and click
-                    <b>"Run Final Diagnosis"</b> to resolve the uncertainty.</p>
-                </div>""", unsafe_allow_html=True)
+                if st.session_state.clinical_note:
+                    note_box(
+                        st.session_state.clinical_note,
+                        live=bool(os.getenv("open_router_api_key") or os.getenv("OPENROUTER_API_KEY")),
+                    )
 
-    # ════  FOOTER  ════
-    st.markdown("""<div class="app-ft">
-        <strong>⚕️ Clinical Decision Support Only</strong><br>
-        Not a diagnosis or replacement for licensed clinician judgment. Built on UCI Cleveland Heart Disease data.
-    </div>""", unsafe_allow_html=True)
+    st.markdown(
+        """
+<div class="footer">
+    Clinical decision support only. This tool is not a diagnosis and does not replace licensed clinician judgment.
+</div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 if __name__ == "__main__":
