@@ -1,5 +1,6 @@
 import numpy as np 
 import pandas as pd 
+from pathlib import Path
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.experimental import enable_iterative_imputer
@@ -9,7 +10,9 @@ from sklearn.impute import SimpleImputer
 
 
 #####---------------Importing The Whole Dataset -----------------#####
-uci_dataset = pd.read_csv("C:\\Users\\admin\\Desktop\\Healthcare\\Healthcare Project 2.0\\heart_disease_uci.csv" ,
+PROJECT_DIR = Path(__file__).resolve().parent
+
+uci_dataset = pd.read_csv(PROJECT_DIR / "heart_disease_uci.csv" ,
                           usecols=[ 'age' , 'gender' ,'cp' ,'trestbps', 'chol' ,'fbs' ,'restecg','thalch' , 'exang' , 'oldpeak',
                                    'slope', 'ca' , 'thal','target'])
 
