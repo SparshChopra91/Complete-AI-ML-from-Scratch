@@ -1,741 +1,1120 @@
-<div style="background-color: #fdfbf7; color: #28313a; font-family: 'Georgia', serif; line-height: 1.6; padding: 40px;">
+# Smart Clinic Assistant: A Resource-Aware Two-Tier Heart Disease Triage System Using Staged Feature Acquisition and SHAP-Guided Draft Explanation
 
-# SMART CLINIC ASSISTANT: A RESOURCE-AWARE TWO-TIER HEART DISEASE TRIAGE SYSTEM USING STAGED FEATURE ACQUISITION AND SHAP-GUIDED DRAFT EXPLANATION
+## Front Matter
 
-**A Formal Six-Week Summer Internship Technical Report**  
-**Submitted in Partial Fulfillment of the Requirements for the Summer Internship Program**  
-**Tenure: June 1, 2026 – July 12, 2026**
+### Cover Page
+
+**Council of Scientific and Industrial Research - Central Scientific Instruments Organisation (CSIR-CSIO), Chandigarh**  
+**Chandigarh College of Engineering and Technology (CCET), Chandigarh**
+
+**Internship Technical Report**
+
+**Submitted by:** Sparsh Chopra, B.Tech Computer Science and Engineering, CCET Chandigarh  
+**Email:** co24365@ccet.ac.in  
+**Internship Organisation:** CSIR-CSIO, Sector 30-C, Chandigarh  
+**Project Domain:** Clinical decision support, staged feature acquisition, machine learning, explainable AI, Streamlit software engineering  
+**Internship Duration:** TODO: Insert officially verified start and end dates.  
+**Mentor:** TODO: Insert mentor name and designation from official internship records.  
+**Date of Submission:** TODO
+
+### Certificate
+
+This is to certify that the internship technical report entitled **"Smart Clinic Assistant: A Resource-Aware Two-Tier Heart Disease Triage System Using Staged Feature Acquisition and SHAP-Guided Draft Explanation"** is a record of project work carried out by **Sparsh Chopra**, B.Tech Computer Science and Engineering, CCET Chandigarh, during an internship at **CSIR-Central Scientific Instruments Organisation (CSIR-CSIO), Chandigarh**.
+
+The work concerns the design, implementation, and evaluation of a retrospective machine-learning workflow simulation for heart disease triage. It includes leakage-controlled preprocessing, two-tier feature partitioning, Random Forest and ensemble modelling, a Streamlit decision-support interface, SHAP-based attribution, and post-hoc audits using held-out testing, cross-validation, leave-one-site-out testing, calibration, threshold sweep, decision-curve analysis, and subgroup analysis.
+
+Supervisor Name: TODO  
+Designation: TODO  
+Signature: ______________________  
+Date: __________________________
+
+### Declaration
+
+I, **Sparsh Chopra**, declare that this internship report is based on the project repository, source code, dataset, evaluation scripts, research manuscript, and associated documentation available in the workspace. The system described here is a retrospective software prototype and workflow audit. It is not a validated medical device, not a clinically approved diagnostic product, and not an autonomous discharge rule. Any real clinical use would require prospective validation, ethics and governance review, calibrated thresholds, privacy controls, and regulatory assessment.
+
+Where the repository does not verify a detail, a **TODO** marker has been retained instead of inventing information.
+
+Signature: ______________________  
+Date: TODO
+
+### Acknowledgement
+
+I thank **CSIR-CSIO, Chandigarh** for the research environment in which this healthcare informatics and software engineering project was developed. I thank **CCET Chandigarh** for academic support. I acknowledge the public UCI Heart Disease dataset and the open-source scientific Python ecosystem, including Python, pandas, NumPy, scikit-learn, joblib, SHAP, Streamlit, and Plotly. I also acknowledge the internal review documents in the repository, which helped reframe the work from a simple classifier into a safety-audited staged workflow simulation.
+
+### Abstract
+
+Machine-learning studies on heart disease prediction often evaluate models as if every diagnostic feature is available at the beginning of patient assessment. This assumption is convenient for benchmarking but does not represent real clinical triage. Basic intake variables such as age, sex, chest pain type, and resting blood pressure are available immediately. Downstream variables such as cholesterol, fasting blood sugar, ECG findings, maximum heart rate, exercise-induced angina, ST depression, slope, major vessel count, and thalassemia or stress-test category require additional clinical workflow, time, equipment, or interpretation.
+
+This internship project developed **Smart Clinic Assistant**, a two-tier retrospective heart disease triage simulation using a 920-record multi-site UCI-style dataset containing Cleveland, Hungary, VA Long Beach, and Switzerland records. The binary target is `target > 0`. The project separates an eight-column encoded **Tier 1 intake matrix** from a 37-column encoded **Tier 2 diagnostic matrix**. The preprocessing pipeline splits data before imputation, encoding, and scaling; treats cholesterol values equal to zero as invalid; applies iterative imputation to continuous variables; applies a non-colliding categorical sentinel value of `-1`; and adds missingness indicators for clinically meaningful absence patterns.
+
+The Tier 1 model is a shallow Random Forest gatekeeper. The Tier 2 model is a soft-voting ensemble combining two Random Forests, Logistic Regression, and KNN. The implemented application policy bypasses Tier 2 only for low-risk Tier 1 cases where `p1 <= 0.30`; gray-zone and high-risk cases proceed to Tier 2. The research manuscript also evaluates an uncertainty-band ablation, but that policy is treated as a cost-first ablation rather than the deployed application workflow.
+
+Under 5-fold cross-validation, the conservative cascade achieved **84.5% +/- 2.2% accuracy** and **0.898 +/- 0.034 AUROC** while avoiding **25.1% +/- 3.3%** of Tier 2 profiles. The full Tier 2 model achieved **84.3% +/- 1.8% accuracy** and **0.904 +/- 0.035 AUROC**. Leave-one-site-out validation reduced pooled cascade accuracy to **78.0%**, and the held-out bypass audit showed that the 0.30 low-risk threshold bypassed 4 positive cases among 45 bypassed patients. A stricter 0.15 threshold avoided 9.8% of Tier 2 profiles with zero bypassed positives on the held-out split. These results support staged acquisition as a useful workflow-auditing framework but do not support clinical deployment.
+
+### Table of Contents
+
+1. Front Matter  
+2. Chapter 1: Organization Profile  
+3. Chapter 2: Internship Overview  
+4. Chapter 3: Problem Statement  
+5. Chapter 4: Literature Survey  
+6. Chapter 5: Requirement Analysis  
+7. Chapter 6: Dataset Description  
+8. Chapter 7: Methodology  
+9. Chapter 8: Implementation  
+10. Chapter 9: Results and Analysis  
+11. Chapter 10: Conclusion and Future Scope  
+12. References  
+13. Appendices
+
+### List of Figures
+
+<!-- Figure:
+System Architecture
+Source:
+overleaf.md / Final Version reseacrh Paper.pdf / app.py workflow
+-->
+
+<!-- Figure:
+Preprocessing Pipeline
+Source:
+Data_Processing_final.py
+-->
+
+<!-- Figure:
+Streamlit Tier 1 Intake and Routing Dashboard
+Source:
+TODO: Capture from app.py after running Streamlit.
+-->
+
+<!-- Figure:
+Tier 2 SHAP Explanation Dashboard
+Source:
+TODO: Capture from app.py after running Streamlit.
+-->
+
+<!-- Figure:
+Decision Curve Analysis
+Source:
+publication_evaluation.py / final research paper
+-->
+
+### List of Tables
+
+| Table No. | Title |
+|---:|---|
+| 1.1 | CSIR and CSIR-CSIO institutional summary |
+| 2.1 | Six-week internship timeline |
+| 4.1 | Literature comparison matrix |
+| 5.1 | Functional requirements |
+| 6.1 | Dataset columns and descriptions |
+| 6.2 | Site distribution and prevalence |
+| 7.1 | Tier feature partition |
+| 8.1 | File-by-file implementation summary |
+| 9.1 | Cross-validation results |
+| 9.2 | Held-out performance |
+| 9.3 | Threshold sweep |
+| 9.4 | LOSO validation |
+
+### Abbreviations
+
+| Abbreviation | Meaning |
+|---|---|
+| AI | Artificial Intelligence |
+| AUROC | Area Under Receiver Operating Characteristic Curve |
+| CDSS | Clinical Decision Support System |
+| CSIO | Central Scientific Instruments Organisation |
+| CSIR | Council of Scientific and Industrial Research |
+| DCA | Decision Curve Analysis |
+| ECE | Expected Calibration Error |
+| LOSO | Leave-One-Site-Out |
+| MCC | Matthews Correlation Coefficient |
+| MICE | Multivariate Imputation by Chained Equations |
+| RF | Random Forest |
+| SHAP | SHapley Additive exPlanations |
+| UCI | University of California Irvine Machine Learning Repository |
 
 ---
 
-## FRONT MATTER (ADMINISTRATIVE)
+## Chapter 1: Organization Profile
 
-### 1. OFFICIAL COVER PAGE
+### 1.1 History of CSIR
 
+The **Council of Scientific and Industrial Research (CSIR)** is one of India's major publicly funded research and development organizations. It functions under the Ministry of Science and Technology, Government of India, and maintains a national network of laboratories, outreach centres, innovation complexes, and units. The official CSIR profile describes CSIR as a contemporary R&D organization with a broad science and technology base covering areas such as oceanography, geophysics, chemicals, drugs, genomics, biotechnology, nanotechnology, mining, aeronautics, instrumentation, environmental engineering, and information technology [37].
+
+CSIR was established in 1942 to strengthen India's scientific and industrial research capability. Since its inception, it has connected scientific knowledge with national development needs. CSIR's laboratories have contributed to healthcare, materials, aerospace, agriculture, environmental systems, chemicals, energy, food, instrumentation, and industrial processes. This broader mission is relevant to Smart Clinic Assistant because the project treats clinical artificial intelligence not only as a statistical model but also as a workflow technology that must fit resource-constrained operating conditions.
+
+### 1.2 History of CSIR-CSIO
+
+**CSIR-Central Scientific Instruments Organisation (CSIR-CSIO)** is a constituent laboratory of CSIR located in Sector 30-C, Chandigarh. The CSIR network map lists CSIR-CSIO as the Central Scientific Instruments Organisation under the physical sciences cluster [39]. Public institutional descriptions state that CSIO was established in 1959 and later moved to Chandigarh in 1962, with its research identity focused on scientific and industrial instrumentation [40]. Because the official CSIO website could not be reliably accessed during report preparation, details specific to CSIO history should be verified from official CSIR-CSIO documents before final institutional submission.
+
+CSIR-CSIO's domain is aligned with engineering practice. Instrumentation research integrates sensing, electronics, mechanical design, software, optics, signal processing, calibration, human factors, manufacturing, and field validation. Smart Clinic Assistant is not a physical medical device, but it follows an instrumentation mindset: it treats a clinical workflow as a measurable process, separates input channels by acquisition cost and availability, designs a decision pipeline, and evaluates safety, reliability, and operational limitations.
+
+### 1.3 Vision and Mission
+
+The official CSIR Vision is to enhance the quality of life of Indian citizens through innovative science and technology, globally competitive R&D, sustainable solutions, and capacity building aligned with Atmanirbhar Bharat [38]. CSIR's mission includes technology innovation, translational research, commercialization, national-goal alignment, health outcomes through biology, chemistry, engineering and computation, capacity building, and high-value services to industry and society [38].
+
+The internship project aligns with this mission in a limited but concrete way. It explores whether a clinical decision-support workflow can reduce unnecessary downstream diagnostic feature acquisition while preserving much of the predictive performance of a full-profile model. It does not claim to solve clinical triage, but it demonstrates how research software can be structured to evaluate trade-offs between resource use and safety.
+
+### 1.4 Research Areas, Healthcare Research, and AI Research
+
+CSIR-CSIO's institutional identity is centred on scientific and industrial instruments. Public summaries describe areas such as optics and optoelectronics, biomedical instrumentation, analytical instrumentation, computational instrumentation, advanced materials and sensors, precision mechanical systems, agrionics, MEMS, and environmental or strategic instrumentation [39], [40]. The present project falls under computational instrumentation, biomedical instrumentation, and healthcare decision-support software.
+
+Healthcare research in instrumentation organizations includes diagnostic devices, biomedical sensors, assistive technologies, imaging systems, laboratory automation, signal processing, and clinical decision support. The project is computational healthcare research: it asks whether patient triage can be represented as staged information acquisition instead of a static classification event.
+
+Artificial intelligence research in healthcare must be judged by more than model accuracy. It must be assessed for calibration, robustness, explainability, dataset shift, user workflow, and failure modes. This project reflects that broader view by including cross-validation, leave-one-site-out validation, threshold sensitivity, bypass accounting, calibration diagnostics, decision-curve analysis, and subgroup audits.
+
+### 1.5 Organizational Structure, Facilities, and Internship Programme
+
+CSIR operates through a national network of laboratories and units. Official CSIR pages identify 37 national laboratories, 39 outreach centres, one innovation complex, and three units [37]. CSIR-CSIO is listed under the physical sciences cluster [39]. Exact current division names, leadership hierarchy, and mentor placement should be verified from official CSIR-CSIO documents before final submission.
+
+For this internship project, the facilities relevant to the work are primarily computational: Python development environment, dataset storage, source-code management, package dependencies, local Streamlit runtime, and evaluation scripts. The repository does not provide evidence of specific CSIR-CSIO hardware allocations, GPU resources, or internal servers, so this report does not claim their use.
+
+The internship programme provided an opportunity to translate classroom knowledge in machine learning, software engineering, data preprocessing, and user-interface development into applied research. The work required independent study of the dataset, review of literature, implementation of pipelines, development of a Streamlit workflow interface, and preparation of a research manuscript.
+
+### 1.6 Role in Scientific Research and Healthcare Technologies
+
+CSIR-CSIO supports India's capability in scientific and industrial instrumentation. Instrumentation research converts scientific principles into usable systems that measure, guide, automate, or assist real-world processes. This project follows that translational logic in software by converting a clinical ML benchmark into a workflow simulation that can be audited for operational behaviour.
+
+| Outcome | Contribution |
+|---|---|
+| Workflow modelling | Separates intake variables from downstream diagnostic variables |
+| Engineering implementation | Builds preprocessing, model training/loading, inference, UI, and explanation components |
+| Safety audit | Reports bypassed positives and threshold sensitivity |
+| Generalization audit | Compares random split performance with LOSO site-held-out performance |
+| Interpretability | Provides local SHAP factor ranking for Tier 2 predictions |
+| Responsible reporting | States that clinical deployment is not supported |
+
+---
+
+## Chapter 2: Internship Overview
+
+### 2.1 Internship Objectives
+
+The internship objective was to develop a professional, research-oriented software prototype for heart disease triage that moves beyond a conventional single-stage classifier. The project aimed to investigate whether a staged feature-acquisition workflow can reduce downstream diagnostic feature acquisition while maintaining useful predictive performance under explicit safety audits.
+
+The technical objectives were to study the UCI Heart Disease dataset, implement leakage-controlled preprocessing, divide the feature space into Tier 1 and Tier 2, train or load separate models, build a Streamlit workflow interface, integrate SHAP explanations, include optional draft clinical note generation, evaluate the system using robust audits, and prepare a professional manuscript and report.
+
+### 2.2 Duration
+
+The exact official internship duration is not present in a verified administrative file in the repository. Some older draft text mentions a six-week internship and dates around June-July 2026, but this should not be treated as authoritative unless confirmed by CSIR-CSIO and CCET records.
+
+**TODO:** Insert official start date, end date, attendance period, division, and mentor details after verification.
+
+### 2.3 Research Goals
+
+The research goal was not simply to maximize accuracy on a public dataset. Many previous studies have already evaluated heart disease classifiers under full-feature assumptions. The more meaningful research goal was to evaluate a resource-aware workflow: can a model using low-cost intake features avoid a meaningful fraction of downstream diagnostic profiles while preserving most of the predictive performance of a full-profile model, and what safety risks appear when this routing policy is audited?
+
+| Research Question | Evaluation Method |
+|---|---|
+| Does Tier 1 alone provide useful discrimination? | Tier 1 held-out and CV metrics |
+| Does Tier 2 improve performance? | Tier 2 full-profile held-out and CV metrics |
+| Can a cascade preserve performance while avoiding Tier 2? | Conservative cascade performance and avoidance rate |
+| Is the bypass branch safe? | Bypass positive count, missed positives, NPV |
+| Are thresholds stable? | Low-threshold sweep |
+| Does performance generalize across sites? | Leave-one-site-out validation |
+| Are probabilities suitable for thresholds? | Calibration audit and reliability bins |
+| Does the workflow have clinical utility? | Decision-curve analysis |
+| Are subgroup patterns visible? | Sex and age-band subgroup audit |
+
+### 2.4 Weekly Timeline
+
+| Week | Main Work | Deliverables |
+|---:|---|---|
+| Week 1 | Domain understanding and dataset exploration | Dataset statistics, target definition, site distribution |
+| Week 2 | Preprocessing pipeline | `Data_Processing_final.py`, Tier 1/Tier 2 matrices |
+| Week 3 | Model architecture and training | `Model_handler_final.py`, model builders, joblib persistence logic |
+| Week 4 | Streamlit application | `app.py`, intake workflow, routing, Tier 2 activation |
+| Week 5 | Evaluation and manuscript | `publication_evaluation.py`, `overleaf.md`, final paper PDF |
+| Week 6 | Review and report preparation | Reconciled critique documents and this internship report |
+
+### 2.5 Tasks Completed
+
+| Task | Status | Evidence |
+|---|---|---|
+| Dataset inspection | Completed | `heart_disease_uci.csv`, dataset statistics |
+| Preprocessing pipeline | Completed | `Data_Processing_final.py` |
+| Tier 1/Tier 2 feature split | Completed | `Data_Processing_final.py` |
+| Model builders and persistence | Completed | `Model_handler_final.py` |
+| Streamlit interface | Completed | `app.py` |
+| SHAP explanation integration | Completed in app; older standalone prototype is outdated | `app.py`, `Ai_explainer_shap.py` |
+| Optional LLM note generation | Implemented as unvalidated prototype | `app.py` |
+| Publication evaluation script | Completed | `publication_evaluation.py` |
+| Research manuscript | Completed | `overleaf.md`, final PDF |
+| Internship report | Completed in this file | `Project_Report.md` |
+
+### 2.6 Skills Learned
+
+The internship strengthened skills in clinical AI problem framing, data preprocessing, leakage prevention, missing-data handling, scikit-learn modelling, model persistence, cross-validation, calibration, decision-curve analysis, leave-one-site-out validation, Streamlit design, Plotly visualization, SHAP interpretability, prompt design, limitations writing, and professional report writing.
+
+### 2.7 Professional Experience and Mentorship
+
+The project provided experience in moving from a working prototype to a defensible engineering report. A major learning outcome was that a high held-out accuracy score is not sufficient for healthcare AI. The project initially appeared successful when the conservative cascade achieved strong held-out performance. However, deeper analysis showed that the low-risk bypass threshold missed positive cases and that site-held-out validation reduced performance substantially. This changed the professional interpretation of the project from high-performing clinical tool to useful workflow simulation with important safety warnings.
+
+The repository does not verify mentor names or official review meetings. **TODO:** Insert mentor names, division, meeting schedule, and reviewed deliverables after verification from CSIR-CSIO internship records.
+
+### 2.8 Learning Outcomes
+
+The major learning outcomes were that clinical ML must be evaluated in relation to workflow, feature availability matters, missingness can carry workflow information, probability thresholds require calibration, staged systems must report bypass safety, site-held-out validation is more realistic than random splitting, SHAP does not prove clinical usefulness, and LLM-generated clinical text requires formal safety evaluation before use.
+
+---
+
+## Chapter 3: Problem Statement
+
+### 3.1 Clinical Motivation
+
+Heart disease prediction has been a common machine-learning benchmark for decades. Public datasets such as UCI Heart Disease are widely used to compare classifiers, feature-selection methods, and interpretability tools. However, most benchmark workflows assume that all variables are available at the same time. In clinical triage, this assumption is weak.
+
+When a patient first presents to a clinic or emergency department, some variables are immediately available. Age, sex, chest pain description, and resting blood pressure can be collected during intake. Other variables require diagnostic workflow. Cholesterol and fasting blood sugar require laboratory testing. Resting ECG requires equipment and interpretation. Maximum heart rate and exercise-induced angina are linked to stress-test context. Major vessel counts and thalassemia or stress-test categories are downstream diagnostic features. Treating these variables as equally available ignores the cost and timing of clinical information.
+
+### 3.2 Existing Limitations
+
+The repository and final research paper identify several limitations in standard heart disease ML studies: all-features-available assumption, limited workflow modelling, insufficient safety accounting, random split optimism, weak calibration reporting, interpretability gaps, and deployment overclaiming. These limitations make static full-feature accuracy insufficient for triage-oriented decision support.
+
+### 3.3 Workflow Problem
+
+A first-contact triage system should not require downstream diagnostic variables for every patient before producing any useful decision-support signal. It should first use readily available intake variables, decide whether additional information is needed, and then escalate only when the routing policy requires it.
+
+### 3.4 Research Gap
+
+The research gap is not that Random Forests or voting ensembles are new. The gap is the integrated audit of a staged cardiovascular workflow: explicit Tier 1/Tier 2 feature separation, profile avoidance measurement, bypass safety accounting, threshold sweep, calibration analysis, decision-curve analysis, leave-one-site-out validation, subgroup transparency, and SHAP-based traceability in an interactive interface.
+
+### 3.5 Engineering Problem
+
+The engineering problem is to build a software system that faithfully implements the staged workflow. This involves reproducible preprocessing, aligned feature matrices, separate models, model persistence, one-row UI inference, routing, explanation, graceful failure handling, and responsible communication of clinical limitations.
+
+### 3.6 Project Objectives, Scope, and Limitations
+
+The project objectives are to design a staged clinical decision-support simulation, build a leakage-controlled preprocessing pipeline, train Tier 1 and Tier 2 models, implement conservative cascade routing, evaluate performance against baselines, audit resource-safety trade-offs, build a usable Streamlit prototype, integrate local explanation and draft communication support, and prepare a professional manuscript and report.
+
+The scope includes public retrospective data, binary prediction, staged feature acquisition, scikit-learn models, Streamlit UI, SHAP explanation, optional LLM draft note generation, and post-hoc research evaluation. It excludes prospective recruitment, hospital EMR integration, real-time clinical deployment, regulatory approval, physician usability study, clinician-scored LLM evaluation, real monetary cost modelling, and causal inference.
+
+---
+
+## Chapter 4: Literature Survey
+
+### 4.1 Overview
+
+The literature relevant to this project spans cardiovascular prediction, clinical AI validation, ensemble learning, staged feature acquisition, selective prediction, learning to defer, budgeted learning, SHAP interpretability, calibration, decision-curve analysis, dataset shift, missingness, and clinical decision support. The project is interdisciplinary: it combines applied machine learning with workflow modelling and software engineering.
+
+### 4.2 Heart Disease Prediction
+
+Heart disease prediction using clinical variables has a long history. The UCI Heart Disease dataset originates from earlier work on coronary artery disease diagnosis and has become a standard benchmark [1], [2]. Many studies use the Cleveland subset because it is cleaner and more commonly cited. The present project uses a 920-record multi-site file containing Cleveland, Hungary, VA Long Beach, and Switzerland records. This broader file supports site-shift analysis but also introduces strong heterogeneity.
+
+Recent cardiovascular ML papers have shown that machine-learning models can achieve strong discrimination when complete feature sets are available [6], [7], [8]. However, this full-feature setting is not equivalent to early triage. A model requiring thallium/stress-test and vessel-count variables is closer to a downstream diagnostic classifier than an intake triage tool.
+
+### 4.3 Clinical AI and Evaluation
+
+Clinical AI literature emphasizes that model performance must be interpreted in context [3], [4], [5]. A model with high AUROC may still fail if it is poorly calibrated, not externally validated, difficult to integrate into workflow, or unsafe under distribution shift. Prediction-model reporting guidelines such as TRIPOD and TRIPOD+AI encourage transparent reporting of study design, predictors, outcomes, validation, and limitations [11], [12]. PROBAST emphasizes risk of bias and applicability [19].
+
+The Smart Clinic Assistant follows these principles partially. It reports the data source, feature sets, preprocessing, model architecture, evaluation splits, and limitations. It does not claim formal checklist compliance or clinical validation.
+
+### 4.4 Ensemble Learning
+
+Ensemble learning combines multiple models to improve robustness or predictive performance. Random Forests average many decision trees and can handle nonlinear feature interactions [32]. Voting ensembles combine predictions from different estimators. The Tier 2 model combines two Random Forests, Logistic Regression, and KNN with soft voting. The chosen ensemble is adequate for a prototype and was fixed before final audit, but it is not proof of algorithmic superiority.
+
+### 4.5 Feature Acquisition, Selective Prediction, and Deferral
+
+Feature acquisition concerns the decision of which variables to collect before prediction. In healthcare, variables differ in cost, invasiveness, time, and availability. Budgeted feature acquisition and cost-sensitive learning attempt to optimize predictive performance under feature-cost constraints [23], [24]. Selective prediction allows a model to abstain when uncertain [26]-[28]. Learning-to-defer frameworks route cases to another decision-maker or expert system [29], [30].
+
+Smart Clinic Assistant is related to all three ideas but remains simpler. It uses a fixed clinically interpretable split rather than a learned acquisition policy. Tier 1 uses intake variables, while Tier 2 uses downstream diagnostic variables. The implemented conservative gate escalates all non-low-risk cases to Tier 2.
+
+### 4.6 SHAP, Calibration, Decision Curves, and Workflow Auditing
+
+SHAP provides additive local feature attributions based on Shapley values [33]. It is useful for ranking local factors that increase or decrease a model's predicted risk, but it does not prove causality, fairness, clinical actionability, or clinician usefulness [34]. Calibration is important because routing thresholds depend on probability estimates [16], [17]. Decision-curve analysis evaluates net benefit across threshold probabilities and is more clinically relevant than accuracy alone when model output guides action [18].
+
+Workflow auditing means evaluating the system in the context of the operational process. For this project, workflow auditing includes how many patients bypass Tier 2, how many bypassed patients are actually positive, how profile avoidance changes with threshold, how performance changes under site shift, whether probabilities are calibrated enough for routing, and whether the workflow has decision-curve net benefit.
+
+### 4.7 Literature Comparison Matrix
+
+| Area | Representative Work | Relevance | Difference from This Project |
+|---|---|---|---|
+| UCI heart disease | Janosi et al. [1] | Dataset provenance | This project evaluates staged workflow |
+| CAD probability | Detrano et al. [2] | Historical diagnostic context | Not a staged ML app |
+| ML in medicine | Rajkomar et al. [3] | Clinical AI framing | Broad review |
+| CVD ML | Weng et al. [6] | Routine clinical prediction | Full-feature focus |
+| Multicentre CAD ML | Motwani et al. [7] | Cardiac ML relevance | Different dataset and outcome |
+| UCI/Framingham SHAP | Raman et al. [8] | Strong comparison paper | Cleveland subset/full-vector analysis |
+| XGBoost | Chen and Guestrin [9] | Future baseline | Not implemented |
+| Prediction metrics | Steyerberg et al. [10] | Evaluation framework | Project applies multiple metrics |
+| Dataset shift | Finlayson et al. [14] | Explains LOSO concerns | Project demonstrates site shift |
+| Calibration | Van Calster et al. [17] | Threshold reliability | Project audits calibration |
+| DCA | Vickers and Elkin [18] | Net benefit | Project includes DCA |
+| Budgeted RF | Nan et al. [23] | Feature budget concept | Project uses fixed split |
+| Cost-sensitive diagnosis | Kachuee et al. [24] | Medical cost framing | No explicit cost function |
+| Cascades | Viola and Jones [25] | Cascaded design | Different domain |
+| Reject option | Chow [26] | Selective prediction | Project escalates to Tier 2 |
+| Learning to defer | Madras et al. [29] | Deferral theory | Not learned |
+| SHAP | Lundberg and Lee [33] | Local explanation | Traceability only |
+| Clinician XAI needs | Tonekaboni et al. [34] | Human-centred explanation | LLM note unvalidated |
+| Bias in algorithms | Obermeyer et al. [35] | Fairness caution | Subgroup audit underpowered |
+
+### 4.8 Literature Gap Summary
+
+The project fills a practical gap between static full-feature heart disease prediction and workflow-aware clinical AI auditing. It does not introduce a new classifier, but it combines existing methods into a staged acquisition simulation and evaluates safety-relevant trade-offs. The most important gap addressed is explicit bypass safety accounting and site-held-out stress testing for staged cardiovascular workflows.
+
+---
+
+## Chapter 5: Requirement Analysis
+
+### 5.1 Functional Requirements
+
+| ID | Functional Requirement | Implementation Evidence |
+|---|---|---|
+| FR1 | Load the UCI heart disease CSV file | `Data_Processing_final.py`, `app.py` |
+| FR2 | Convert raw target into binary target | `Y = (target > 0).astype(int)` |
+| FR3 | Split data before preprocessing | `train_test_split(..., stratify=Y, random_state=43)` |
+| FR4 | Handle invalid cholesterol values | `chol == 0` replaced with `np.nan` |
+| FR5 | Add missingness indicators | `ca_missing`, `chol_missing_or_zero`, `oldpeak_missing` |
+| FR6 | Impute continuous features | `IterativeImputer(random_state=43, max_iter=15)` |
+| FR7 | Impute categorical features | `SimpleImputer(strategy='constant', fill_value=-1)` |
+| FR8 | One-hot encode categorical features | `OneHotEncoder(sparse_output=False, handle_unknown='ignore')` |
+| FR9 | Scale continuous features | `MinMaxScaler` |
+| FR10 | Create Tier 1 and Tier 2 matrices | `x_train_tier1`, `x_train_tier2` |
+| FR11 | Train or load models | `Model_handler_final.py` |
+| FR12 | Accept Tier 1 inputs in UI | `app.py` |
+| FR13 | Route based on Tier 1 probability | `route_for_probability()` |
+| FR14 | Activate Tier 2 for gray/high cases | Streamlit session state |
+| FR15 | Compute local explanations | `shap_values_for()` |
+| FR16 | Generate fallback or API-based note | `local_clinical_note()`, `ai_clinical_note()` |
+| FR17 | Generate evaluation outputs | `publication_evaluation.py` |
+
+### 5.2 Non-Functional Requirements
+
+| ID | Requirement | Project Handling |
+|---|---|---|
+| NFR1 | Reproducibility | Fixed random states and scripted evaluation |
+| NFR2 | Leakage control | Split before transformations |
+| NFR3 | Interpretability | SHAP local factor ranking |
+| NFR4 | Safety transparency | Bypass positives and missed positives reported |
+| NFR5 | Usability | Streamlit UI with staged workflow |
+| NFR6 | Maintainability | Separate preprocessing, model, evaluation, and app files |
+| NFR7 | Graceful degradation | Optional Plotly, SHAP, OpenAI imports handled |
+| NFR8 | Privacy caution | API key read from environment variable |
+| NFR9 | Clinical caution | App states decision support only |
+| NFR10 | Portability | Project-relative paths in final modules |
+
+### 5.3 Hardware Requirements
+
+The repository does not specify hardware requirements. The implementation can run on a standard laptop or desktop. A practical minimum is a dual-core CPU, 8 GB RAM, 1 GB of free storage for the repository and package cache, and no GPU. Internet access is required only for installing dependencies or using the optional LLM API.
+
+### 5.4 Software Requirements
+
+| Software | Purpose |
+|---|---|
+| Python 3.10+ | Runtime |
+| pandas | Data manipulation |
+| NumPy | Numeric operations |
+| scikit-learn | Preprocessing, models, metrics |
+| joblib | Model persistence |
+| Streamlit | Web application |
+| SHAP | Local explanations |
+| Plotly | Interactive charts used by `app.py` if installed |
+| OpenAI-compatible SDK | OpenRouter/Gemini API call |
+| google-genai | Listed dependency; not central in final app |
+| fpdf | Listed for future PDF generation |
+
+### 5.5 Problem Definition, Scope, Constraints, and Assumptions
+
+Given a patient represented by clinical features, predict whether heart disease is present while minimizing unnecessary downstream diagnostic profile acquisition. The system first operates on Tier 1 intake features and requests Tier 2 only when the routing policy requires it.
+
+The scope is retrospective workflow simulation and software prototype development. Constraints include public retrospective data, old records, heterogeneous sites, missing values, no actual cost data, heuristic thresholds, no clinician LLM audit, and absent model artifacts in the current root listing. The main assumptions are that the local CSV is the project dataset, the binary target is `target > 0`, Tier 1 variables are lower-cost and earlier in the workflow, and the final research paper is the highest-priority technical source.
+
+---
+
+## Chapter 6: Dataset Description
+
+### 6.1 Dataset Source
+
+The dataset used in the repository is `heart_disease_uci.csv`. It is a UCI-style heart disease dataset containing 920 records and 16 columns. The final research paper identifies it as a heterogeneous multi-site UCI Heart Disease dataset rather than the Cleveland-only subset.
+
+### 6.2 Institution Distribution
+
+| Site | Records | Positive Cases | Prevalence |
+|---|---:|---:|---:|
+| Cleveland | 304 | 139 | 0.457 |
+| Hungary | 293 | 106 | 0.362 |
+| VA Long Beach | 200 | 149 | 0.745 |
+| Switzerland | 123 | 115 | 0.935 |
+| **Total** | **920** | **509** | **0.553** |
+
+The site distribution is important because prevalence varies substantially. Switzerland has very high positive prevalence, while Hungary has much lower prevalence. This makes random splits optimistic and motivates leave-one-site-out validation.
+
+### 6.3 Features and Target Variable
+
+| Column | Description |
+|---|---|
+| `id` | Patient record identifier |
+| `age` | Age |
+| `gender` | Biological sex as recorded in dataset |
+| `dataset` | Source site |
+| `cp` | Chest pain type |
+| `trestbps` | Resting blood pressure |
+| `chol` | Serum cholesterol |
+| `fbs` | Fasting blood sugar flag |
+| `restecg` | Resting electrocardiographic result |
+| `thalch` | Maximum heart rate achieved |
+| `exang` | Exercise-induced angina |
+| `oldpeak` | ST depression induced by exercise relative to rest |
+| `slope` | Slope of peak exercise ST segment |
+| `ca` | Number of major vessels |
+| `thal` | Thalassemia / stress-test category |
+| `target` | Raw disease target |
+
+Raw target counts are 411 records with target 0, 265 with target 1, 109 with target 2, 107 with target 3, and 28 with target 4. The binary target is `0` when `target == 0` and `1` when `target > 0`, producing 411 negative and 509 positive records.
+
+### 6.4 Feature Description
+
+Tier 1 features are age, sex/gender, chest pain type, and resting blood pressure. These variables are treated as intake variables because they can normally be collected early in triage.
+
+Tier 2 features include cholesterol, fasting blood sugar, resting ECG, maximum heart rate, exercise-induced angina, ST depression, slope, major vessel count, thalassemia category, and missingness indicators. These variables represent downstream diagnostic information or additional clinical testing.
+
+### 6.5 Missing Values and Invalid Values
+
+| Column | Missing Count |
+|---|---:|
+| `trestbps` | 59 |
+| `chol` | 30 |
+| `fbs` | 90 |
+| `restecg` | 2 |
+| `thalch` | 55 |
+| `exang` | 55 |
+| `oldpeak` | 62 |
+| `slope` | 309 |
+| `ca` | 611 |
+| `thal` | 486 |
+
+Additionally, `chol` contains 172 zero values, which are treated as invalid and replaced with missing values before imputation.
+
+### 6.6 Class Distribution and Site Distribution
+
+| Class | Count | Percent |
+|---|---:|---:|
+| Negative | 411 | 44.7% |
+| Positive | 509 | 55.3% |
+
+| Site | Records | Dataset Percent |
+|---|---:|---:|
+| Cleveland | 304 | 33.0% |
+| Hungary | 293 | 31.8% |
+| VA Long Beach | 200 | 21.7% |
+| Switzerland | 123 | 13.4% |
+
+### 6.7 Data Dictionary and Summary
+
+| Variable | Type in Raw Data | Processing |
+|---|---|---|
+| `age` | Numeric | MICE imputation if needed, min-max scaling |
+| `gender` | Categorical | One-hot encoding |
+| `cp` | Categorical | One-hot encoding |
+| `trestbps` | Numeric | MICE imputation, min-max scaling |
+| `chol` | Numeric | Zero to missing, MICE imputation, min-max scaling |
+| `fbs` | Boolean/categorical | Map to 0/1, sentinel impute, one-hot |
+| `restecg` | Categorical | Map to integer, sentinel impute, one-hot |
+| `thalch` | Numeric | MICE imputation, min-max scaling |
+| `exang` | Boolean/categorical | Map to 0/1, sentinel impute, one-hot |
+| `oldpeak` | Numeric | MICE imputation, min-max scaling |
+| `slope` | Categorical | Map to integer, sentinel impute, one-hot |
+| `ca` | Numeric/categorical | Sentinel impute, one-hot |
+| `thal` | Categorical | Map to integer, sentinel impute, one-hot |
+| `target` | Integer | Binarized |
+
+| Item | Value |
+|---|---:|
+| Raw records | 920 |
+| Raw columns | 16 |
+| Predictor columns used | 13 |
+| Training records | 736 |
+| Held-out records | 184 |
+| Tier 1 encoded columns | 8 |
+| Tier 2 encoded columns | 37 |
+| Positive cases | 509 |
+| Negative cases | 411 |
+
+---
+
+## Chapter 7: Methodology
+
+### 7.1 Study Design
+
+The study is a retrospective machine-learning workflow simulation. It uses a public, de-identified dataset and does not involve patient contact, intervention, or clinical deployment. The design compares four predictive modes: Tier 1 only, Tier 2 full profile, conservative cascade, and uncertainty-band policy. The conservative cascade is the implemented application policy. The uncertainty-band policy is a cost-first ablation.
+
+### 7.2 Workflow and Pipeline
+
+The workflow begins with intake variables. A Tier 1 model estimates an initial probability. If the probability is low enough, the conservative policy bypasses Tier 2 in the simulation. Otherwise, the system requests the Tier 2 diagnostic profile and uses the full model.
+
+<!-- Figure:
+Two-Tier Workflow
+Source:
+Derived from app.py route_for_probability and overleaf.md architecture figure.
+-->
+
+```text
+Patient intake -> Tier 1 vector -> Tier 1 Random Forest probability p1
+    -> if p1 <= 0.30: low-risk review, Tier 2 avoided in simulation
+    -> if p1 > 0.30: Tier 2 diagnostic panel -> Tier 2 ensemble probability p2
+        -> final decision-support output -> SHAP local attribution -> optional draft note
 ```
-========================================================================================
-             COUNCIL OF SCIENTIFIC AND INDUSTRIAL RESEARCH (CSIR)
-           CENTRAL SCIENTIFIC INSTRUMENTS ORGANISATION (CSIO)
-                         SECTOR 30-C, CHANDIGARH - 160030, INDIA
-========================================================================================
 
-                               SIX-WEEK INTERNSHIP TECHNICAL REPORT
+The preprocessing pipeline loads selected columns, defines the binary target, performs stratified train-test split, maps categorical variables, replaces invalid cholesterol zeros with missing values, adds missingness indicators, one-hot encodes chest pain and gender, imputes categorical columns with `-1`, imputes continuous columns with `IterativeImputer`, one-hot encodes remaining categoricals, scales continuous variables, slices Tier 1, and assigns Tier 2 as the full encoded matrix.
 
-                                         PROJECT TITLE:
-             SMART CLINIC ASSISTANT: A RESOURCE-AWARE TWO-TIER HEART DISEASE
-                   TRIAGE SYSTEM USING STAGED FEATURE ACQUISITION AND
-                                SHAP-GUIDED DRAFT EXPLANATION
+### 7.3 Preprocessing, Feature Engineering, and Missing Data Handling
 
-SUBMITTED BY:
-Sparsh Chopra
-Department of Computer Science & Engineering
-Chandigarh College of Engineering and Technology (CCET)
-Sector 26, Chandigarh - 160019, India
+The preprocessing design addresses data leakage, invalid values, and informative missingness. Train-test split is performed before transformations. Cholesterol zero values are treated as invalid. Missingness indicators are retained for `ca`, cholesterol missing/zero, and `oldpeak`. Continuous variables (`age`, `trestbps`, `chol`, `thalch`, `oldpeak`) use iterative imputation. Categorical variables (`fbs`, `restecg`, `exang`, `slope`, `thal`, `ca`) use sentinel imputation with `-1` before one-hot encoding.
 
-RESEARCH MENTORS:
-Dr. Sanjeev Verma
-Senior Scientist / Research Mentor, CSIR-CSIO, Chandigarh
+The final Tier 2 matrix has 37 columns:
 
-Dr. Durgesh Mishra
-Senior Scientist / Research Mentor, CSIR-CSIO, Chandigarh
+```text
+age, trestbps, chol, thalch, oldpeak,
+ca_missing, chol_missing_or_zero, oldpeak_missing,
+cp_asymptomatic, cp_atypical angina, cp_non-anginal, cp_typical angina,
+gender_Female, gender_Male,
+ca_-1.0, ca_0.0, ca_1.0, ca_2.0, ca_3.0,
+restecg_-1.0, restecg_0.0, restecg_1.0, restecg_2.0,
+fbs_-1.0, fbs_0.0, fbs_1.0,
+exang_-1.0, exang_0.0, exang_1.0,
+slope_-1.0, slope_0.0, slope_1.0, slope_2.0,
+thal_-1.0, thal_0.0, thal_1.0, thal_2.0
+```
 
-INTERNSHIP TENURE:
-1 June 2026 – 12 July 2026
-========================================================================================
+### 7.4 Tier Partition and Architecture
+
+| Tier | Raw Variables | Encoded Columns | Purpose |
+|---|---|---:|---|
+| Tier 1 | age, gender, cp, trestbps | 8 | Intake gatekeeper |
+| Tier 2 | all predictors plus missingness indicators | 37 | Full diagnostic profile |
+
+<!-- Figure:
+System Architecture
+Source:
+app.py, Data_Processing_final.py, Model_handler_final.py, publication_evaluation.py
+-->
+
+The architecture contains data loading, preprocessing, Tier 1 model, routing layer, Tier 2 model, explanation layer, communication layer, UI layer, and evaluation layer.
+
+### 7.5 Random Forest and Voting Ensemble
+
+The Tier 1 model uses a Random Forest with limited depth. A shallow depth helps reduce overfitting and produces smoother probability estimates for the simple intake feature set. The Tier 2 model is a `VotingClassifier` with `voting="soft"`. It combines two Random Forests, Logistic Regression, and KNN. Soft voting averages class probabilities rather than hard labels.
+
+### 7.6 Routing Policy and Threshold Logic
+
+Thresholds are `LOW_THRESHOLD = 0.30` and `HIGH_THRESHOLD = 0.70`. The implemented conservative app policy bypasses Tier 2 only if `p1 <= 0.30`; otherwise Tier 2 is requested. The uncertainty-band ablation bypasses low-risk and high-risk cases and requests Tier 2 only for `0.30 < p1 < 0.70`.
+
+The threshold logic is central to the project's safety trade-off. A higher low-risk threshold avoids more Tier 2 profiles but increases the risk of bypassing positive cases. The final paper reports that `0.15` avoided 9.8% of Tier 2 profiles with zero bypassed positives on the held-out split, while `0.30` avoided 24.5% but bypassed 4 positives.
+
+### 7.7 Evaluation Metrics
+
+The project uses accuracy, balanced accuracy, precision, recall/sensitivity, specificity, F1 score, MCC, AUROC, Brier score, ECE, Tier 2 avoided, bypass positives, and decision-curve net benefit. These metrics are necessary because accuracy alone does not capture clinical safety, threshold reliability, or workflow utility.
+
+### 7.8 Equations and Algorithms
+
+Binary target:
+
+```text
+y = 1 if target > 0
+y = 0 if target = 0
+```
+
+Tier 1 and Tier 2 probabilities:
+
+```text
+p1 = f1(X1)
+p2 = f2(X2)
+```
+
+Conservative cascade:
+
+```text
+if p1 <= 0.30:
+    use p1 and bypass Tier 2 in simulation
+else:
+    request Tier 2 and use p2
+```
+
+Decision-curve net benefit:
+
+```text
+net_benefit = (TP / N) - (FP / N) * (pt / (1 - pt))
+```
+
+Training algorithm:
+
+```text
+Load data -> define target -> split -> fit preprocessing on train -> transform train/test
+-> slice Tier 1 and Tier 2 -> train Tier 1 RF -> train Tier 2 voting ensemble -> save models
+```
+
+SHAP algorithm:
+
+```text
+Define positive-class probability function -> build SHAP permutation explainer
+-> explain patient row -> sort factors by absolute impact -> display top factors
+```
+
+### 7.9 Flowcharts and Sequence Diagrams
+
+<!-- Figure:
+Preprocessing Flowchart
+Source:
+Data_Processing_final.py
+-->
+
+<!-- Figure:
+Routing Flowchart
+Source:
+app.py route_for_probability and publication_evaluation.py conservative_cascade
+-->
+
+```text
+User -> Streamlit UI: Enter Tier 1 vitals
+Streamlit UI -> Tier 1 vector builder: Encode and scale intake row
+Tier 1 vector builder -> Tier 1 model: Predict probability
+Tier 1 model -> Streamlit UI: p1
+Streamlit UI -> Routing function: Determine route
+Routing function -> Streamlit UI: Low / gray / high
+User -> Streamlit UI: Enter Tier 2 diagnostics if required
+Streamlit UI -> Tier 2 vector builder: Encode full profile
+Tier 2 vector builder -> Tier 2 model: Predict probability
+Tier 2 model -> SHAP explainer: Explain positive-class probability
+SHAP explainer -> Streamlit UI: Ranked local factors
+Streamlit UI -> Note generator: Generate local or LLM draft note
 ```
 
 ---
 
-### 2. CANDIDATE'S DECLARATION
+## Chapter 8: Implementation
 
-I hereby declare that the summer internship technical report entitled **"Smart Clinic Assistant: A Resource-Aware Two-Tier Heart Disease Triage System Using Staged Feature Acquisition and SHAP-Guided Draft Explanation"**, submitted to the **Central Scientific Instruments Organisation (CSIR-CSIO)**, Chandigarh, and the **Chandigarh College of Engineering and Technology (CCET)**, Chandigarh, represents an authentic, original, and independent record of engineering, pipeline architecture, and empirical research carried out by me during the six-week summer internship program from **June 1, 2026 to July 12, 2026**, under the direct joint supervision of **Dr. Sanjeev Verma** and **Dr. Durgesh Mishra**, Senior Scientists at CSIR-CSIO.
+### 8.1 Folder Structure and Source Files
 
-I further declare that:
-1. All software implementations (`Data_Processing_final.py`, `Model_handler_final.py`, `Ai_explainer_shap.py`, `app.py`, and `publication_evaluation.py`) were engineered, tested, and audited independently during the internship tenure.
-2. The statistical evaluations, cross-validation metrics, calibration audits, Decision Curve Analyses, and Leave-One-Site-Out generalizability tests reported herein are genuine empirical outputs generated from the documented pipeline.
-3. No portion of this report or codebase has been submitted, either in whole or in part, to any other institution, university, or examination body for the award of any degree, diploma, fellowship, or professional certification.
+| File | Role |
+|---|---|
+| `heart_disease_uci.csv` | Dataset |
+| `Data_Processing_final.py` | Final preprocessing pipeline |
+| `Model_handler_final.py` | Final model builder, loader, and trainer |
+| `app.py` | Streamlit application |
+| `publication_evaluation.py` | Evaluation and audit script |
+| `Ai_explainer_shap.py` | Older standalone SHAP/LLM prototype |
+| `data_preprocessing.py` | Older Tier 1 preprocessing prototype |
+| `model_handler.py` | Older Tier 1 model prototype |
+| `overleaf.md` | LaTeX research manuscript source |
+| `Final Version reseacrh Paper.pdf` | Final research paper PDF |
+| `readme.md` | Project overview |
+| `project_analysis.md` | Detailed project analysis draft |
+| `phase.md` | Manuscript planning draft |
+| `claude_verdict.md` | Peer review critique |
+| `gemini_verdict.md` | Peer review critique |
+| `codex_verdict.md` | Publication assessment |
+| `requirements.txt` | Dependencies |
+| `pdf_generator.py` | Empty placeholder |
+| `Project_Report.md` | Internship report |
 
-**Sparsh Chopra**  
-Department of Computer Science & Engineering  
-Chandigarh College of Engineering and Technology (CCET), Chandigarh  
-Date: July 12, 2026  
-Signature: ___________________________
+### 8.2 Major Modules
 
----
+`Data_Processing_final.py` is the final preprocessing module. It loads the dataset from the project directory, creates train-test splits, transforms features, and exposes processed matrices as module-level variables.
 
-### 3. CERTIFICATE OF SUPERVISION
+`Model_handler_final.py` defines reusable model builders and persistence paths. If model files are missing, the module trains models and dumps them with joblib. In the current workspace listing, `Tier_1_model.pkl` and `Tier_2_model.pkl` are not present. Therefore, they should be described as generated artifacts rather than existing repository files.
 
-This is to certify that the summer internship technical report entitled **"Smart Clinic Assistant: A Resource-Aware Two-Tier Heart Disease Triage System Using Staged Feature Acquisition and SHAP-Guided Draft Explanation"**, submitted by **Sparsh Chopra** in partial fulfillment of the requirements for the six-week summer internship program at the **Central Scientific Instruments Organisation (CSIR-CSIO)**, Chandigarh, is a bona fide record of research and software engineering work carried out under our direct supervision from **June 1, 2026 to July 12, 2026**.
+`app.py` is the main user-facing application. It contains page configuration, CSS injection, animated WebGL background injection, cached model and dataset loading, reference range calculation, Tier 1 and Tier 2 vector construction, routing logic, Plotly charts, SHAP explanation, local note generation, optional LLM note generation, Streamlit state machine, and UI layout.
 
-During the course of this project, the candidate demonstrated rigorous technical competence in clinical medical informatics, machine learning pipeline design, TRIPOD+AI compliant leakage control, and interactive clinical decision support interface development. The candidate successfully completed all assigned technical milestones, including:
-- Engineering a non-leaking preprocessing stack handling Missing Not At Random (MNAR) categorical clinical test results via non-colliding sentinel imputation (`-1`) and explicit missingness flags prior to Multivariate Imputation by Chained Equations (MICE).
-- Implementing a two-tier cascade architecture dividing low-cost emergency intake vitals from high-cost laboratory and imaging features.
-- Conducting thorough publication-grade safety audits, including threshold-sweep bypass accounting, Decision Curve Analysis (DCA), expected calibration error (ECE-10) evaluation, Leave-One-Site-Out (LOSO) stress testing across four international hospital cohorts, and demographic subgroup auditing.
+`publication_evaluation.py` implements publication-grade evaluation: held-out performance, bypass safety, calibration summary, reliability bins, threshold sweep, decision-curve data, subgroup metrics, site prevalence, and output manifest. It writes CSV outputs to `publication_outputs` when run.
 
-To the best of our knowledge, the results reported herein are original, scientifically rigorous, and meet the high institutional standards expected by CSIR-CSIO and CCET Chandigarh.
+`data_preprocessing.py`, `model_handler.py`, and `Ai_explainer_shap.py` are older prototypes. They are useful for development history but are not the final source of truth. The standalone SHAP prototype references variables not present in the final model handler, so the integrated `app.py` path is treated as current.
 
-**Dr. Sanjeev Verma**  
-Senior Scientist & Research Mentor  
-CSIR-Central Scientific Instruments Organisation (CSIO)  
-Sector 30-C, Chandigarh - 160030  
-Signature: ___________________________  
-Date: July 12, 2026
+### 8.3 Libraries, Functions, and Classes
 
-**Dr. Durgesh Mishra**  
-Senior Scientist & Research Mentor  
-CSIR-Central Scientific Instruments Organisation (CSIO)  
-Sector 30-C, Chandigarh - 160030  
-Signature: ___________________________  
-Date: July 12, 2026
+The project uses pandas, NumPy, scikit-learn, joblib, Streamlit, Plotly, SHAP, OpenAI SDK, dotenv, and listed optional libraries. Important functions in `app.py` include `load_model`, `load_dataset`, `reference_ranges`, `scale_value`, `tier1_vector`, `tier2_vector`, `predict_probability`, `route_for_probability`, `gauge`, `shap_values_for`, `plot_shap_bars`, `plot_factor_balance`, `local_clinical_note`, `ai_clinical_note`, `initialize_state`, `reset_downstream`, and `main`.
 
-**Head of Department**  
-Department of Computer Science & Engineering  
-Chandigarh College of Engineering and Technology (CCET), Chandigarh  
-Signature: ___________________________  
-Date: July 12, 2026
+The final source files do not define custom model classes. `publication_evaluation.py` defines a dataclass `ClassificationSummary` for metric reporting.
 
----
+### 8.4 Data Flow, Training, Inference, and UI
 
-### 4. ACKNOWLEDGEMENT
+Training/evaluation flow:
 
-I wish to express my deepest gratitude to the **Council of Scientific and Industrial Research - Central Scientific Instruments Organisation (CSIR-CSIO)**, Chandigarh, for providing an exceptional national research environment, world-class computational infrastructure, and a rigorous scientific culture during this six-week summer internship program.
-
-I am profoundly indebted to my mentors, **Dr. Sanjeev Verma** and **Dr. Durgesh Mishra**, Senior Scientists at CSIR-CSIO, for their continuous technical guidance, insightful critiques, and unwavering support. Their rigorous feedback on statistical methodology, TRIPOD+AI compliance, probability calibration, and clinical risk analysis shaped the scientific direction of this work and elevated the project from a standard predictive prototype into a formal workflow safety audit.
-
-I also extend my sincere thanks to the Director of CSIR-CSIO, the Head of the Department of Computer Science and Engineering at **Chandigarh College of Engineering and Technology (CCET)**, Chandigarh, and all faculty members and technical staff who provided valuable suggestions and organizational support throughout the tenure of this project.
-
----
-
-### 5. ABSTRACT
-
-Machine-learning research in cardiovascular disease prediction routinely evaluates diagnostic classifiers under the unrealistic operational assumption that complete patient profiles—including invasive fluoroscopy, nuclear stress tests, and specialized biochemical assays—are available at initial intake. This all-at-once assumption ignores the clinical reality of emergency department triage, where basic vitals are acquired immediately at zero variable cost, whereas diagnostic procedures incur substantial financial expense, infrastructure demand, and patient waiting time. This report details **Smart Clinic Assistant**, a retrospective staged-acquisition clinical decision support workflow simulation engineered and audited during a six-week summer research internship at **CSIR-CSIO**.
-
-The system evaluates a 920-record multi-site clinical dataset (Cleveland, Hungary, VA Long Beach, Switzerland) partitioned into an eight-feature **Tier 1 intake space** (age, sex, chest pain description, resting blood pressure) and a 37-feature encoded **Tier 2 diagnostic space**. To preserve strict data integrity without leakage, missing categorical values are imputed with a non-colliding sentinel value of **`-1`**, binary missingness indicators are explicitly generated, and continuous variables undergo Multivariate Imputation by Chained Equations (MICE) fitted strictly on training partitions. A shallow Random Forest gatekeeper evaluates intake vitals against pragmatic lower and upper routing thresholds ($\theta_L = 0.30$, $\theta_H = 0.70$). Under stratified 5-fold cross-validation, the implemented conservative cascade achieved **84.5% ± 2.2% accuracy** and **0.898 ± 0.034 AUROC** while avoiding **25.1% ± 3.3% of Tier 2 diagnostic profiles** ($p=1.000$ vs. full Tier 2 model on held-out audit).
-
-Crucially, the report conducts exhaustive post-hoc safety and distribution audits. Leave-one-site-out (LOSO) testing revealed severe site shift, dropping pooled accuracy to **78.0%** and falling below trivial majority-class baselines at high-prevalence sites (Switzerland, VA Long Beach). Furthermore, held-out bypass-safety audits demonstrated that the pragmatic **0.30 threshold** bypassed 4 true positive cases among 45 low-risk patients (91.1% NPV), whereas a stricter **0.15 threshold** achieved zero bypassed positives with 9.8% profile avoidance. For explainability, local SHAP permutation attributions are integrated with an experimental Large Language Model (Google Gemini via OpenRouter API) to generate plain-language draft summaries. The project establishes a reproducible workflow and safety-auditing framework for resource-aware clinical triage while explicitly underscoring that prospective threshold calibration and clinical trial validation remain mandatory prior to hospital deployment.
-
----
-
-### 6. TABLE OF CONTENTS
-
-- **FRONT MATTER**
-  - 1. Official Cover Page
-  - 2. Candidate's Declaration
-  - 3. Certificate of Supervision
-  - 4. Acknowledgement
-  - 5. Abstract
-  - 6. Table of Contents
-  - 7. List of Figures
-  - 8. List of Tables
-- **CHAPTER 1: INTRODUCTION**
-  - 1.1 Overview of Cardiovascular Disease Triage
-  - 1.2 Problem Statement: The "All-Features-Available" Fallacy in Machine Learning
-  - 1.3 Objectives of the Internship Project
-  - 1.4 Scope of Work at CSIR-CSIO
-  - 1.5 Report Organization
-- **CHAPTER 2: LITERATURE REVIEW**
-  - 2.1 Evolution of Cardiovascular Risk Prediction Models
-  - 2.2 Critical Appraisal of Static Complete-Case ML Benchmarks
-  - 2.3 Staged Feature Acquisition, Cascade Classifiers, and Cost-Sensitive Learning
-  - 2.4 Selective Classification, Deferral Policies, and Uncertainty Quantification
-  - 2.5 Explainable AI (SHAP) and Large Language Model Integration in Medicine
-  - 2.6 Methodological Reporting Guidelines (TRIPOD+AI) and Dataset Shift
-- **CHAPTER 3: TECHNOLOGIES AND TOOLS USED**
-  - 3.1 Core Scientific Python Ecosystem (Python, Scikit-Learn, Pandas, NumPy)
-  - 3.2 Model Persistence and Engineering Tools (Joblib, Git, GitHub)
-  - 3.3 Interactive Clinical Interface Framework (Streamlit, Plotly, WebGL Shaders)
-  - 3.4 Explainability and Generative AI Stack (SHAP Permutation, Google Gemini via OpenRouter)
-- **CHAPTER 4: METHODOLOGY AND SYSTEM ARCHITECTURE**
-  - 4.1 Multi-Site Clinical Dataset Composition and Target Definition
-  - 4.2 Strict TRIPOD+AI Leakage Control and Preprocessing Pipeline
-  - 4.3 Sentinel Categorical Imputation (`-1`) and Missingness Flag Generation
-  - 4.4 Feature Space Partitioning: Tier 1 Intake Space vs. Tier 2 Diagnostic Space
-  - 4.5 Tier 1 Shallow Random Forest Gatekeeper Architecture
-  - 4.6 Tier 2 Heterogeneous Soft-Voting Diagnostic Ensemble Architecture
-  - 4.7 Triage Routing Policies and Mathematical Gate Formulation
-  - 4.8 Evaluation Framework: Cross-Validation, DCA, Calibration, and Safety Accounting
-- **CHAPTER 5: IMPLEMENTATION AND INTERFACE**
-  - 5.1 Object-Oriented Backend Engineering (`ModelHandler` and Pipeline Encapsulation)
-  - 5.2 Offline Evaluation Engine Engineering (`publication_evaluation.py`)
-  - 5.3 Local SHAP Attribution Engine and LLM Translation Layer
-  - 5.4 Interactive Streamlit Clinical Decision Support Dashboard Architecture
-  - 5.5 Reactive UI State Machine and Dynamic Diagnostic Workup Unlocking
-- **CHAPTER 6: RESULTS AND ANALYSIS**
-  - 6.1 Primary Generalization Benchmark: Stratified 5-Fold Cross-Validation
-  - 6.2 Development Split Performance Benchmark ($N=184$)
-  - 6.3 Resource Stewardship and Tier 2 Profile Avoidance Analysis
-  - 6.4 Clinical Bypass Safety Audit and Low-Threshold Sensitivity Sweep
-  - 6.5 Probability Calibration Audit and Reliability Diagram Analysis
-  - 6.6 Decision Curve Analysis (Net Benefit Evaluation)
-  - 6.7 Institutional Generalizability Audit: Leave-One-Site-Out (LOSO) Stress Testing
-  - 6.8 Exploratory Subgroup Fairness Audit across Biological Sex and Age Bands
-  - 6.9 End-to-End Deep Explainability and Draft Generative Output Walkthrough
-- **CHAPTER 7: CONCLUSION AND FUTURE WORK**
-  - 7.1 Summary of Engineering and Methodological Contributions
-  - 7.2 Rigorous Accounting of Methodological and Clinical Limitations
-  - 7.3 Roadmap for Clinical Integration and Future Scope at CSIR-CSIO
-- **REFERENCES**
-
----
-
-### 7. LIST OF FIGURES
-
-- **Figure 4.1:** End-to-End Architectural Flowchart of the Two-Tier Staged Clinical Triage Pipeline
-- **Figure 5.1:** Streamlit Dashboard Architecture: Stage 1 Intake Form and Tier 1 Gatekeeper Card
-- **Figure 5.2:** Streamlit Dashboard Architecture: Dynamic Tier 2 Laboratory Panel and Explanation Workspace
-- **Figure 6.1:** Decision Curve Analysis (DCA): Net Benefit vs. Clinical Threshold Probability ($p_t \in [0.05, 0.45]$)
-- **Figure 6.2:** Probability Calibration Reliability Histogram: Raw vs. Isotonic Calibrated Tier 1 Probabilities
-
----
-
-### 8. LIST OF TABLES
-
-- **Table 4.1:** Multi-Site Institutional Composition and Prevalence of the 920-Record Clinical Dataset
-- **Table 4.2:** Complete Feature Partitioning between Tier 1 Intake Subspace ($X_1$) and Tier 2 Diagnostic Subspace ($X_2$)
-- **Table 6.1:** Primary Stratified 5-Fold Cross-Validation Generalization Performance ($N=920$)
-- **Table 6.2:** Held-Out Development Split Benchmark across Standalone Models and Cascade Policies ($N=184$)
-- **Table 6.3:** Held-Out Low-Threshold Sweep ($\theta_L \in [0.05, 0.50]$) and Bypass Safety Accounting
-- **Table 6.4:** Leave-One-Site-Out (LOSO) Stress Testing and Comparison against Institutional Majority-Class Baselines
-- **Table 6.5:** Exploratory Held-Out Subgroup Audit Disaggregated by Biological Sex and Age Bands
-
----
-
-## CHAPTER 1: INTRODUCTION
-
-### 1.1 Overview of Cardiovascular Disease Triage
-
-Cardiovascular disease (CVD) represents the single largest cause of mortality globally, accounting for nearly 18 million deaths annually according to the World Health Organization. In acute hospital settings—particularly overcrowded emergency departments, community triage clinics, and rural health centers—the rapid and accurate stratification of patients presenting with chest pain or suspected coronary artery disease (CAD) is a paramount operational objective. Emergency department physicians operate under severe temporal, infrastructure, and staffing constraints. They must continuously navigate a challenging clinical trade-off between two asymmetrical risks:
-1. **False-Negative Risk (Under-Triage):** Discharging an acute coronary patient without specialized intervention or hospitalization carries catastrophic mortality and morbidity risks.
-2. **False-Positive Risk (Over-Triage):** Ordering invasive, expensive, or time-consuming diagnostic procedures—such as complete biochemical panels, nuclear stress imaging, or cardiac catheterization—for every presenting patient congests diagnostic infrastructure, depletes clinical resources, inflates healthcare costs, and subjects low-risk patients to iatrogenic complications.
-
-Over the past two decades, clinical decision support systems (CDSS) have evolved to incorporate machine-learning classifiers trained on patient electronic health records (EHR). However, for a predictive algorithmic tool to be genuinely effective in real-world clinical operations, it must mirror the operational physical realities of medical triage workflows.
-
-### 1.2 Problem Statement: The "All-Features-Available" Fallacy in Machine Learning
-
-A pervasive methodological flaw dominates contemporary academic literature on cardiovascular machine learning: researchers almost exclusively evaluate predictive classifiers under the **"all-at-once" feature availability assumption**. In standard academic benchmarking pipelines, classifiers are trained and evaluated by simultaneously injecting the complete patient feature vector $X = \{x_1, x_2, \dots, x_M\}$ into the model.
-
-This mathematical paradigm implicitly treats every physiological, laboratory, and imaging feature as if it were instantly and costlessly available at initial patient presentation. In physical hospital practice, however, clinical features exhibit extreme operational asymmetries across three real-world axes:
-1. **Acquisition Expense and Invasiveness:** Primary triage vitals—such as patient age, biological sex, subjective description of chest pain, and resting blood pressure—are non-invasive, essentially zero-cost, and recorded by nursing staff within minutes of emergency intake. Conversely, diagnostic assays—such as fasting blood sugar assays, serum cholesterol panels, 12-lead resting electrocardiograms, thallium stress tests, and fluoroscopic coronary vessel counts—require specialized laboratory processing, specialized diagnostic hardware, phlebotomy, and physician interpretation.
-2. **Temporal Latency:** Intake vitals are available instantly at time $t=0$, whereas blood assays and nuclear imaging introduce diagnostic latencies ranging from hours to overnight observation.
-3. **Workflow Mismatch:** An algorithm that mandates complete diagnostic feature vectors before computing a risk probability cannot function as a front-line triage gatekeeper. Requiring invasive fluoroscopic vessel counts simply to run a prediction model defeats the purpose of triage.
-
-### 1.3 Objectives of the Internship Project
-
-During the six-week research internship tenure at **CSIR-CSIO**, this project aimed to replace the static "all-at-once" classification paradigm with an auditable, staged-acquisition clinical decision support architecture. The specific technical objectives were:
-1. **Architecting a Staged Feature Pipeline:** To formalize and engineer a strict two-tier data separation dividing low-cost, immediately available intake vitals (**Tier 1**) from downstream, high-cost laboratory and imaging measurements (**Tier 2**).
-2. **Developing a Leakage-Controlled Engineering Stack:** To implement an end-to-end Python preprocessing pipeline ensuring strict TRIPOD+AI compliance by performing train-test partitioning prior to imputation, utilizing non-colliding sentinel values (`-1`) for missing categorical data, and generating explicit missingness indicators.
-3. **Designing and Auditing Cascade Routing Policies:** To implement a gatekeeper model coupled with pragmatic routing thresholds ($\theta_L=0.30$, $\theta_H=0.70$) that bypasses complete Tier 2 diagnostic workups for low-risk patients while rigorously auditing bypass safety across multi-site and subgroup stress tests.
-4. **Implementing Human-Centered Explainability:** To integrate local Shapley Additive exPlanations (SHAP) with an experimental Large Language Model (Google Gemini 2.5 Flash via OpenRouter API) to translate complex ensemble attributions into draft clinical communication summaries requiring physician oversight.
-
-### 1.4 Scope of Work at CSIR-CSIO
-
-The scope of work executed at **CSIR-CSIO** encompassed complete system research, software engineering, empirical auditing, and scientific documentation:
-- **Data Engineering:** Ingestion, cleaning, and reconciliation of the 920-record multi-site UCI Heart Disease data file across four international medical centers.
-- **Model Design & Persistence:** Object-oriented implementation of a Tier 1 shallow Random Forest gatekeeper (`max_depth=4`) and a Tier 2 heterogeneous soft-voting ensemble comprising Random Forests, Logistic Regression, and $k$-Nearest Neighbors.
-- **Auditing Framework:** Construction of `publication_evaluation.py` to generate Decision Curve Analysis (DCA) coordinates, expected calibration error (ECE-10) metrics, reliability bins, threshold-sweep sensitivity tables, leave-one-site-out (LOSO) generalizability tables, and demographic subgroup audits.
-- **Interface Construction:** Development of a production-grade interactive Streamlit web dashboard (`app.py`, 1,844 lines) featuring real-time staged inference, Plotly visual charts, custom WebGL shader backgrounds, and LLM explanation rendering.
-
-### 1.5 Report Organization
-
-This technical report is organized into seven core chapters:
-- **Chapter 1 (Introduction):** Formulates the clinical problem, exposes the "all-at-once" fallacy, and outlines project objectives.
-- **Chapter 2 (Literature Review):** Critically synthesizes prior research in cardiovascular ML, staged acquisition, selective classification, explainable AI, and TRIPOD+AI reporting standards.
-- **Chapter 3 (Technologies and Tools Used):** Details the Python scientific stack, Streamlit UI framework, and generative AI interfaces.
-- **Chapter 4 (Methodology and System Architecture):** Provides an exhaustive mathematical and structural deep dive into dataset composition, leakage control, feature tiering, ensemble design, routing policies, and evaluation protocols.
-- **Chapter 5 (Implementation and Interface):** Explains the backend object-oriented architecture, evaluation scripting, and Streamlit user interface implementation.
-- **Chapter 6 (Results and Analysis):** Presents comprehensive empirical findings across cross-validation, held-out auditing, threshold sensitivity sweeps, calibration, Decision Curve Analysis, Leave-One-Site-Out stress testing, and subgroup analysis.
-- **Chapter 7 (Conclusion and Future Work):** Summarizes engineering feasibility, acknowledges strict clinical limitations, and outlines a roadmap for hospital validation.
-
----
-
-## CHAPTER 2: LITERATURE REVIEW
-
-### 2.1 Evolution of Cardiovascular Risk Prediction Models
-
-Cardiovascular risk assessment has evolved through distinct epidemiological and algorithmic eras. Classical risk scores—such as the Framingham Risk Score (D'Agostino *et al.*, 2008), the Systematic Coronary Risk Evaluation (SCORE; Conroy *et al.*, 2003), and the pooled atherosclerotic cardiovascular disease (ASCVD) risk equations—relied on parametric linear survival models (Cox proportional hazards) or multivariable logistic regressions applied to narrow demographic and serum biomarkers. While highly interpretative and clinically ubiquitous, these parametric equations impose rigid linear additivity assumptions and struggle to capture complex non-linear feature interactions.
-
-Early computational benchmarking on the UCI Heart Disease dataset (Detrano *et al.*, 1989) demonstrated that statistical algorithms could predict angiographically confirmed coronary artery disease from clinical profiles. Over the past decade, supervised machine-learning models—including Random Forests (Breiman, 2001), Support Vector Machines (Cortes & Vapnik, 1995), Gradient Boosted Decision Trees (XGBoost by Chen & Guestrin, 2016; LightGBM by Ke *et al.*, 2017), and Deep Neural Networks—have repeatedly demonstrated superior statistical discrimination over classical linear scores on retrospective cohorts.
-
-### 2.2 Critical Appraisal of Static Complete-Case ML Benchmarks
-
-A prominent contemporary example of this complete-case modeling paradigm is the recent study by Raman *et al.* (*Epidemiologia*, 2026), which evaluated non-linear classifiers across the Framingham and Cleveland UCI cohorts and incorporated SHAP feature attributions. While Raman *et al.* achieved strong retrospective AUROC metrics, their methodology exhibits four classic limitations shared by the broader medical ML literature:
-1. **Complete-Case Filtering:** Raman *et al.* restricted their Cleveland evaluation to 297 complete records after discarding instances with missing values, ignoring informative missingness patterns.
-2. **Single-Site Selection Bias:** By focusing exclusively on the Cleveland Clinic cohort, the study ignored the severe institutional shifts present across the remaining European and VA sites in the complete 920-record repository.
-3. **Absence of Cost-Aware Workflow Modeling:** All 13 diagnostic attributes—including invasive fluoroscopy (`ca`) and thallium stress imaging (`thal`)—were fed to the models simultaneously, providing zero mechanism for early patient discharge.
-4. **Lack of Threshold Safety Auditing:** The study reported standard default classification accuracy ($p \ge 0.50$) without evaluating the clinical net benefit or false-negative bypass rates at low emergency triage thresholds.
-
-### 2.3 Staged Feature Acquisition, Cascade Classifiers, and Cost-Sensitive Learning
-
-To overcome the operational unfeasibility of full-profile inference, cost-sensitive learning and budgeted feature acquisition formalize learning settings where feature acquisition incurs explicit costs. Viola and Jones (2001) revolutionized real-time computer vision by introducing **cascade classification**, demonstrating that evaluating instances through a sequential pipeline of increasingly complex classifiers allows simple, computationally cheap stages to reject easy negative cases immediately, reserving expensive downstream evaluation only for ambiguous instances.
-
-In medical informatics, cost-sensitive feature selection (CSFS; Turney, 1995; Kachuee *et al.*, 2019) integrates acquisition costs into the optimization objective:
-$$\min_{f, S} \; \mathcal{L}(y, f(X_S)) + \lambda \sum_{j \in S} c_j,$$
-where $S \subseteq \{1, \dots, M\}$ is the subset of acquired features, $c_j$ represents the financial, temporal, or physiological cost of feature $j$, and $\mathcal{L}$ is the predictive loss. While theoretical frameworks for active feature acquisition (AFA) using reinforcement learning exist, practical clinical deployment requires transparent, deterministic stage boundaries that match existing hospital triage protocols.
-
-### 2.4 Selective Classification, Deferral Policies, and Uncertainty Quantification
-
-Selective classification and reject-option learning (Chow, 1970; El-Yaniv & Wiener, 2010; Geifman & El-Yaniv, 2017) allow a classifier $f(x)$ to abstain from making an autonomous decision when predictive confidence falls within an uncertainty region:
-$$f(x) = \begin{cases} \hat{y}, & \text{if } \text{Confidence}(x) \ge \tau, \\ \text{Abstain / Defer}, & \text{if } \text{Confidence}(x) < \tau. \end{cases}$$
-
-In medical decision support, recent "learning to defer" frameworks (Madras *et al.*, 2018; Mozannar & Sontag, 2020) and uncertainty-aware clinical triage (Kompa *et al.*, 2021) argue that autonomous clinical AI is fundamentally unsafe without explicit uncertainty gates. When an intake gatekeeper exhibits posterior uncertainty ($0.30 < p_1 < 0.70$), the system must defer autonomous discharge and request secondary expert workup.
-
-### 2.5 Explainable AI (SHAP) and Large Language Model Integration in Medicine
-
-The adoption of high-dimensional tree ensembles and neural networks in clinical environments is impeded by their black-box opacity. Local feature attribution methods—most notably **Shapley Additive exPlanations (SHAP)** (Lundberg & Lee, 2017)—provide a mathematically rigorous, axiomatic framework based on cooperative game theory. SHAP assigns each feature an additive local attribution $\phi_i(x)$ satisfying local accuracy, missingness, and consistency.
-
-However, clinical human-computer interaction studies (Tonekaboni *et al.*, 2019) demonstrate that raw numerical attribution vectors and complex force plots create cognitive overload for busy emergency physicians. To bridge this communication gap, recent studies (Singhal *et al.*, 2023) have explored coupling quantitative ML attributions with Large Language Models (LLMs) to generate natural-language clinical narratives. While LLMs excel at syntactic fluency, they exhibit severe clinical hazards, including ungrounded factual hallucinations, uncalibrated confidence, and sensitivity to prompt perturbations (Ji *et al.*, 2023). Consequently, regulatory bodies such as the U.S. FDA (2022 guidance on Clinical Decision Support Software) dictate that generative text in CDSS must be presented strictly as unvalidated draft assistance requiring mandatory human clinician review.
-
-### 2.6 Methodological Reporting Guidelines (TRIPOD+AI) and Dataset Shift
-
-To combat widespread reproducibility failures in clinical AI, the international **TRIPOD+AI statement** (Transparent Reporting of a multivariable prediction model for Individual Prognosis Or Diagnosis paired with AI; Collins *et al.*, 2024) mandates strict reporting standards. TRIPOD+AI explicitly requires:
-- Clear separation of data partitioning prior to any preprocessing or imputation to prevent data leakage.
-- Explicit reporting of missing data mechanisms and imputation models.
-- Reporting of probability calibration alongside discrimination metrics.
-- External validation across distinct geographical or institutional cohorts.
-
-Crucially, medical AI models are highly vulnerable to **dataset shift** (Finlayson *et al.*, 2021), where changes in institutional protocols, patient demographics, or disease prevalence degrade classifier performance outside the training environment. Evaluating models under Leave-One-Site-Out (LOSO) cross-validation is essential to uncover hidden vulnerability to institutional shift.
-
----
-
-## CHAPTER 3: TECHNOLOGIES AND TOOLS USED
-
-### 3.1 Core Scientific Python Ecosystem (Python, Scikit-Learn, Pandas, NumPy)
-- **Python (v3.10+):** Selected as the foundational engineering language due to its universal standard status in scientific computing and clinical machine learning.
-- **Scikit-Learn (v1.4+):** Utilized as the core machine-learning engine. Scikit-learn provides robust, well-tested implementations of foundational supervised algorithms (`RandomForestClassifier`, `LogisticRegression`, `KNeighborsClassifier`, `VotingClassifier`), data transformation pipelines (`OneHotEncoder`, `MinMaxScaler`, `SimpleImputer`, `IterativeImputer`), and standard evaluation metrics (`accuracy_score`, `roc_auc_score`, `brier_score_loss`, `matthews_corrcoef`).
-- **Pandas & NumPy:** Employed for structured tabular dataframe manipulation, efficient numerical slicing, Boolean masking, and vectorized matrix algebra.
-
-### 3.2 Model Persistence and Engineering Tools (Joblib, Git, GitHub)
-- **Joblib:** Utilized for lightweight, zero-copy object serialization (`joblib.dump`, `joblib.load`), enabling fast persistence and lazy loading of compiled ensemble weights (`Tier_1_model.pkl`, `Tier_2_model.pkl`) without retraining during UI inference.
-- **Git & GitHub:** Employed for distributed version control, tracking code modifications, and documenting experimental iterations across the six-week research tenure.
-
-### 3.3 Interactive Clinical Interface Framework (Streamlit, Plotly, WebGL Shaders)
-- **Streamlit (v1.35+):** Selected to engineer the full-stack web dashboard (`app.py`). Streamlit's reactive execution model enables dynamic UI state machine transitions: when a patient's Tier 1 probability falls within the uncertainty gate ($p_1 > 0.30$), Streamlit automatically re-renders the DOM to unlock and display the Tier 2 diagnostic input panel.
-- **Plotly Enterprise Charting:** Integrated to construct interactive, responsive, client-side visual artifacts, including multi-zone risk gauges, horizontal SHAP attribution bar charts, radar feature comparison profiles, and factor balance donuts.
-- **Custom CSS & WebGL Shaders:** Custom CSS enforced a high-contrast warm glassmorphic clinical palette (`--paper: #fffaf2`, `--ink: #28313a`), augmented by a custom React Bits WebGL SideRays animated background shader.
-
-### 3.4 Explainability and Generative AI Stack (SHAP Permutation, Google Gemini via OpenRouter)
-- **SHAP (Shapley Additive exPlanations):** Utilized `shap.Explainer` configured in model-agnostic permutation mode (`algorithm="permutation"`) to compute exact local additive feature attributions around non-linear voting boundaries.
-- **Google Gemini 2.5 Flash via OpenRouter API:** Integrated via OpenAI-compatible RESTful JSON endpoints (`https://openrouter.ai/api/v1`) to synthesize clinical draft narratives from structured SHAP rankings. Strict system prompts enforce professional doctor-to-patient consultation tone, forbid technical ML terminology, and implement a deterministic offline rule-based fallback generator if API access is unavailable.
-
----
-
-## CHAPTER 4: METHODOLOGY AND SYSTEM ARCHITECTURE (CRITICAL SECTION)
-
-### 4.1 Multi-Site Clinical Dataset Composition and Target Definition
-
-The project evaluated a composite **920-record clinical dataset** compiled from four international medical centers available through the UCI Machine Learning Repository (Detrano *et al.*, 1988). Rather than filtering the cohort to complete-case Cleveland records, the entire 920-record cohort was analyzed to audit institutional robustness:
-
-```
-========================================================================================
-TABLE 4.1: MULTI-SITE INSTITUTIONAL COMPOSITION AND PREVALENCE OF THE 920-RECORD DATASET
-========================================================================================
-Source Site / Medical Center          Records (N)   Positive CAD Cases (y=1)  Prevalence
-----------------------------------------------------------------------------------------
-Cleveland Clinic Foundation (USA)         304                 139              0.457
-Hungarian Institute of Cardiology         293                 106              0.362
-VA Medical Center Long Beach (USA)        200                 149              0.745
-University Hospital Zurich (Switzerland)  123                 115              0.935
-----------------------------------------------------------------------------------------
-Complete Pooled Multi-Site Dataset        920                 509              0.553
-Held-Out Test Partition (20% Stratified)  184                 102              0.554
-========================================================================================
+```text
+CSV -> Data_Processing_final.py -> processed matrices -> Model_handler_final.py -> models -> publication_evaluation.py -> metrics
 ```
 
-The binary diagnostic target $y \in \{0, 1\}$ was formulated from the raw ordinal angiographic narrowing score (`target` $\in \{0, 1, 2, 3, 4\}$, representing the number of coronary vessels showing $>50\%$ diameter stenosis):
-$$y = \begin{cases} 1, & \text{if } \text{target} > 0 \text{ (clinically significant CAD present)}, \\ 0, & \text{if } \text{target} = 0 \text{ (normal angiogram / no CAD)}. \end{cases}$$
+UI inference flow:
 
-### 4.2 Strict TRIPOD+AI Leakage Control and Preprocessing Pipeline
-
-To enforce absolute compliance with **TRIPOD+AI reporting guidelines** and prevent subtle data leakage, dataset splitting was performed strictly prior to any feature transformation, scaling, or imputation. The raw 920-record dataframe was partitioned into a stratified 80% training set ($N=736$) and a 20% held-out test set ($N=184$) using fixed seed 43 (`train_test_split(..., test_size=0.2, stratify=Y, random_state=43)`).
-
-```
-+-----------------------------------------------------------------------------------+
-|                     RAW MULTI-SITE UCI DATASET (N = 920 RECORDS)                  |
-+-----------------------------------------------------------------------------------+
-                                          |
-                                          v  [ STRATIFIED SPLIT BEFORE IMPUTATION ]
-                        +-----------------+-----------------+
-                        | (80% Train, N=736)                | (20% Test, N=184)
-                        v                                   v
-+-----------------------------------------------------------------------------------+
-|                     LEAKAGE-CONTROLLED PREPROCESSING PIPELINE                     |
-|  1. Categorical Sentinel Imputation: Missing Categoricals Imputed with -1.0       |
-|  2. Continuous Explicit Flags: ca_missing, chol_missing_or_zero, oldpeak_missing  |
-|  3. MICE Continuous Imputation: IterativeImputer(max_iter=15) FITTED ON TRAIN     |
-|  4. One-Hot Encoding & Scaling: OneHotEncoder & MinMaxScaler FITTED ON TRAIN      |
-+-----------------------------------------------------------------------------------+
-                                          |
-                        +-----------------+-----------------+
-                        |                                   |
-                        v                                   v
-+---------------------------------------+   +---------------------------------------+
-|  TIER 1 INTAKE FEATURE SPACE (X1)     |   |  TIER 2 DIAGNOSTIC SPACE (X2)         |
-|  8 Encoded Features (Vitals Only)     |   |  37 Encoded Features (Full Workup)    |
-+---------------------------------------+   +---------------------------------------+
-
-Figure 4.1: End-to-End Architectural Flowchart of the Two-Tier Staged Clinical Triage Pipeline.
+```text
+User inputs -> vector builder -> saved model -> probability -> route -> optional Tier 2 -> SHAP -> note -> dashboard
 ```
 
-### 4.3 Sentinel Categorical Imputation (`-1`) and Missingness Flag Generation
+Training occurs when `Model_handler_final.py` is imported or run and model files are missing. This design makes the app easier to use, but it also means that importing the module can have side effects by creating model artifacts. In a production codebase, training and inference should be separated more strictly.
 
-A critical engineering correction was implemented to resolve a fatal bug present in early exploratory drafts. Initially, missing categorical variables (`fbs`, `restecg`, `exang`, `slope`, `thal`, `ca`) were imputed using integer `1.0`. This caused severe feature collisions: imputing `1.0` was indistinguishable from true positive binary findings (e.g., Fasting Blood Sugar $>120\text{ mg/dL} = 1.0$).
+The UI contains two main columns: input forms on the left and decision dashboard on the right. After Tier 1 is run, the route determines whether Tier 2 is needed. For Tier 2 cases, the dashboard displays final risk, patient profile radar chart, SHAP chart, factor balance chart, top factor table, and clinical note.
 
-In `Data_Processing_final.py`, this collision was resolved by implementing a dedicated non-colliding sentinel imputation step using **`-1`**:
+### 8.5 Security, Privacy, and PDF Placeholder
+
+The app reads API keys from `open_router_api_key` or `OPENROUTER_API_KEY`. No live key should be committed. Any public release should include a `.gitignore` and rotate exposed keys if any were ever used. The report does not include any API key.
+
+`pdf_generator.py` is empty. Older drafts mention a future PDF export feature, but this is not implemented. Therefore, any claim that PDF export exists would be incorrect. It is listed only as future work.
+
+---
+
+## Chapter 9: Results and Analysis
+
+### 9.1 Cross Validation
+
+| Model or Policy | Accuracy | AUROC | Tier 2 Avoided |
+|---|---:|---:|---:|
+| Tier 1 only | 0.777 +/- 0.027 | 0.843 +/- 0.036 | -- |
+| Tier 2 full profile | 0.843 +/- 0.018 | 0.904 +/- 0.035 | 0.0% |
+| Conservative cascade | 0.845 +/- 0.022 | 0.898 +/- 0.034 | 25.1% +/- 3.3% |
+| Uncertainty-band policy | 0.826 +/- 0.026 | 0.854 +/- 0.042 | 72.4% +/- 2.5% |
+
+Tier 2 improves over Tier 1. Conservative cascade matches Tier 2 accuracy within fold variability while avoiding about one quarter of Tier 2 profiles. Uncertainty-band policy avoids many more profiles but has lower performance.
+
+### 9.2 Held-Out Development Results
+
+| Model or Policy | Accuracy | Balanced Accuracy | Sensitivity | Specificity | F1 | MCC | AUROC | Brier |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Tier 1 only | 0.788 | 0.780 | 0.853 | 0.707 | 0.817 | 0.569 | 0.844 | 0.153 |
+| Tier 2 full profile | 0.902 | 0.895 | 0.961 | 0.829 | 0.916 | 0.805 | 0.920 | 0.107 |
+| Conservative cascade | 0.897 | 0.890 | 0.951 | 0.829 | 0.911 | 0.793 | 0.922 | 0.107 |
+| Uncertainty-band policy | 0.864 | 0.854 | 0.951 | 0.756 | 0.886 | 0.730 | 0.874 | 0.124 |
+
+The held-out split is more optimistic than cross-validation. The final paper correctly avoids making held-out accuracy the main claim.
+
+### 9.3 LOSO Generalization
+
+| Held-Out Site | N | Prevalence | Majority Baseline | Accuracy | Balanced Accuracy | MCC | Sensitivity | Specificity |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Cleveland | 304 | 0.457 | 0.543 | 0.783 | 0.786 | 0.570 | 0.820 | 0.752 |
+| Hungary | 293 | 0.362 | 0.638 | 0.799 | 0.820 | 0.615 | 0.896 | 0.743 |
+| Switzerland | 123 | 0.935 | 0.935 | 0.813 | 0.726 | 0.276 | 0.826 | 0.625 |
+| VA Long Beach | 200 | 0.745 | 0.745 | 0.730 | 0.683 | 0.344 | 0.779 | 0.588 |
+| Pooled | 920 | 0.553 | 0.553 | 0.780 | 0.775 | 0.554 | 0.825 | 0.725 |
+
+Pooled LOSO accuracy is 78.0%, below random CV accuracy. Switzerland and VA Long Beach are high-prevalence sites. Raw accuracy falls below majority-class baseline at those two sites, confirming that site shift is a major limitation.
+
+### 9.4 Calibration and Threshold Sweep
+
+Calibration matters because routing thresholds are probability thresholds. The final paper reports that raw Tier 1 probabilities had lower ECE than Tier 2 in the held-out audit, and isotonic calibration slightly improved ECE but worsened Brier score and AUROC.
+
+<!-- Figure:
+Held-Out Reliability Bins
+Source:
+Final Version reseacrh Paper.pdf
+-->
+
+| Low Threshold | Tier 2 Avoided | Bypass Count | Bypassed Positives | Missed Positives |
+|---:|---:|---:|---:|---:|
+| 0.05 | 1.1% | 2 | 0 | 0 |
+| 0.10 | 4.9% | 9 | 0 | 0 |
+| 0.15 | 9.8% | 18 | 0 | 0 |
+| 0.20 | 15.8% | 29 | 1 | 1 |
+| 0.25 | 22.3% | 41 | 3 | 3 |
+| 0.30 | 24.5% | 45 | 4 | 4 |
+| 0.40 | 30.4% | 56 | 8 | 8 |
+| 0.50 | 39.7% | 73 | 15 | 15 |
+
+The 0.30 threshold is operationally attractive but unsafe as an autonomous rule-out threshold. The 0.15 threshold is safer on the held-out split but avoids fewer profiles. Thresholds must be calibrated and utility-optimized before clinical use.
+
+### 9.5 Decision Curve, Confusion Matrix, ROC, and SHAP
+
+Decision-curve analysis evaluates net benefit across threshold probabilities. The final paper reports that the Tier 2 model and conservative cascade show stronger net benefit than treat-all and treat-none strategies across a relevant threshold range. However, DCA is still post-hoc and held-out based.
+
+<!-- Figure:
+Decision Curve Analysis
+Source:
+publication_evaluation.py / Final Version reseacrh Paper.pdf
+-->
+
+Held-out confusion matrices:
+
+| Model | TN | FP | FN | TP |
+|---|---:|---:|---:|---:|
+| Tier 1 only | 58 | 24 | 15 | 87 |
+| Tier 2 full profile | 68 | 14 | 4 | 98 |
+| Conservative cascade | 68 | 14 | 5 | 97 |
+| Uncertainty-band policy | 62 | 20 | 5 | 97 |
+
+Cross-validation AUROC values were 0.843 +/- 0.036 for Tier 1, 0.904 +/- 0.035 for Tier 2, 0.898 +/- 0.034 for conservative cascade, and 0.854 +/- 0.042 for uncertainty-band policy.
+
+The app computes local SHAP attributions for Tier 2 predictions. It displays top local drivers as horizontal bars, red bars for risk-raising factors, green bars for risk-lowering factors, a factor balance pie chart, and a top factor table. This is an interface behaviour example, not clinical validation.
+
+### 9.6 Subgroups
+
+| Subgroup | N | Prevalence | Accuracy | Sensitivity | Specificity | MCC |
+|---|---:|---:|---:|---:|---:|---:|
+| Female | 38 | 0.263 | 0.974 | 0.900 | 1.000 | 0.932 |
+| Male | 146 | 0.630 | 0.877 | 0.957 | 0.741 | 0.734 |
+| <50 years | 49 | 0.388 | 0.959 | 0.895 | 1.000 | 0.916 |
+| 50-65 years | 115 | 0.609 | 0.887 | 0.971 | 0.756 | 0.765 |
+| >65 years | 20 | 0.650 | 0.800 | 0.923 | 0.571 | 0.545 |
+
+The subgroup audit is underpowered. Female subgroup has only 38 records and the oldest age band has only 20 records. No fairness claim is supported.
+
+### 9.7 Interpretation and Discussion
+
+The results show that staged acquisition can reduce Tier 2 profile use while preserving much of full-profile performance under random cross-validation. However, deeper audits reveal safety and generalization limitations. The project is successful as a research and engineering audit, not as a deployable clinical tool.
+
+The most important finding is the trade-off between resource efficiency and safety. The 0.30 threshold supports the operational result of roughly one-quarter Tier 2 avoidance, but it also bypasses positive cases. The 0.15 threshold is safer on the held-out split but avoids fewer profiles. The second important finding is site shift. Random cross-validation suggests acceptable performance, but LOSO validation exposes reduced generalization. The third important finding is that explanation features should be treated carefully. SHAP factor rankings can improve traceability but are not clinical explanations by themselves. LLM-generated notes may improve readability, but they require formal evaluation for faithfulness and safety.
+
+### 9.8 Comparison
+
+Compared with conventional full-feature heart disease classifiers, the project contributes a staged workflow and safety audit. Compared with budgeted learning and learning-to-defer literature, the project is simpler and less algorithmically novel, but more explicitly tied to the UCI heart-disease triage workflow and bypass-safety accounting.
+
+---
+
+## Chapter 10: Conclusion and Future Scope
+
+### 10.1 Achievements
+
+The internship project built a leakage-controlled preprocessing pipeline, created an explicit Tier 1/Tier 2 feature split, implemented a Tier 1 Random Forest gatekeeper, implemented a Tier 2 soft-voting ensemble, built a Streamlit application simulating staged clinical triage, integrated SHAP local explanation for Tier 2 predictions, added optional LLM draft note generation with local fallback, implemented publication-grade evaluation scripts, produced a final research manuscript and PDF, and identified safety limitations through threshold and bypass audits.
+
+### 10.2 Limitations
+
+The main limitations are public retrospective data, no prospective validation, old and heterogeneous records, heuristic routing thresholds, unsafe 0.30 threshold for autonomous rule-out, no real monetary cost model, no gradient-boosted or learned acquisition baseline, no nested hyperparameter optimization, underpowered subgroup audit, no clinician evaluation of SHAP or LLM notes, no regulatory validation, and model artifacts not currently listed in the workspace.
+
+### 10.3 Future Work
+
+Future work should include cross-validated calibration for Tier 1 probabilities, utility-optimized threshold selection, bypass safety across every CV fold and LOSO setting, external validation on modern Indian clinical datasets, strong tabular baselines such as XGBoost or LightGBM, learned acquisition or learning-to-defer baselines, realistic cost modelling with test-specific cost and time weights, formal clinician usability study, formal LLM note faithfulness audit, secure on-premise inference for sensitive clinical data, PDF report generation through the currently empty `pdf_generator.py`, and separation of training and inference side effects.
+
+### 10.4 Learning Outcomes
+
+The project taught that responsible healthcare AI development requires more than model building. It requires understanding the clinical workflow, measuring safety trade-offs, recognizing dataset shift, reporting limitations clearly, and avoiding unsupported claims. The internship therefore contributed both technical skill and research maturity.
+
+---
+
+## References
+
+[1] A. Janosi, W. Steinbrunn, M. Pfisterer, and R. Detrano, "Heart Disease," UCI Machine Learning Repository, 1988, doi: 10.24432/C52P4X. Available: https://archive.ics.uci.edu/dataset/45/heart+disease
+
+[2] R. Detrano, A. Janosi, W. Steinbrunn, M. Pfisterer, J.-J. Schmid, S. Sandhu, K. H. Guppy, S. Lee, and V. Froelicher, "International application of a new probability algorithm for the diagnosis of coronary artery disease," American Journal of Cardiology, vol. 64, no. 5, pp. 304-310, 1989.
+
+[3] A. Rajkomar, J. Dean, and I. Kohane, "Machine learning in medicine," New England Journal of Medicine, vol. 380, no. 14, pp. 1347-1358, 2019.
+
+[4] E. J. Topol, "High-performance medicine: The convergence of human and artificial intelligence," Nature Medicine, vol. 25, pp. 44-56, 2019.
+
+[5] C. J. Kelly, A. Karthikesalingam, M. Suleyman, G. Corrado, and D. King, "Key challenges for delivering clinical impact with artificial intelligence," BMC Medicine, vol. 17, Art. no. 195, 2019.
+
+[6] S. F. Weng, J. Reps, J. Kai, J. M. Garibaldi, and N. Qureshi, "Can machine-learning improve cardiovascular risk prediction using routine clinical data?," PLOS ONE, vol. 12, no. 4, Art. no. e0174944, 2017.
+
+[7] M. Motwani et al., "Machine learning for prediction of all-cause mortality in patients with suspected coronary artery disease: A 5-year multicentre prospective registry analysis," European Heart Journal, vol. 38, no. 7, pp. 500-507, 2017.
+
+[8] S. Raman et al., "Machine learning for coronary heart disease prediction: Comparative analysis of Framingham and Cleveland subset of the UCI dataset with SHAP-based interpretability," Epidemiologia, vol. 7, no. 3, Art. no. 75, 2026, doi: 10.3390/epidemiologia7030075.
+
+[9] T. Chen and C. Guestrin, "XGBoost: A scalable tree boosting system," in Proc. ACM SIGKDD, 2016, pp. 785-794.
+
+[10] E. W. Steyerberg et al., "Assessing the performance of prediction models: A framework for traditional and novel measures," Epidemiology, vol. 21, no. 1, pp. 128-138, 2010.
+
+[11] G. S. Collins, J. B. Reitsma, D. G. Altman, and K. G. M. Moons, "Transparent reporting of a multivariable prediction model for individual prognosis or diagnosis (TRIPOD): The TRIPOD statement," Annals of Internal Medicine, vol. 162, no. 1, pp. 55-63, 2015.
+
+[12] G. S. Collins, K. G. M. Moons, P. Dhiman, et al., "TRIPOD+AI statement: Updated guidance for reporting clinical prediction models that use regression or machine learning methods," BMJ, vol. 385, Art. no. e078378, 2024.
+
+[13] E. W. Steyerberg and F. E. Harrell, Jr., "Prediction models need appropriate internal, internal-external, and external validation," Journal of Clinical Epidemiology, vol. 69, pp. 245-247, 2016.
+
+[14] S. G. Finlayson et al., "The clinician and dataset shift in artificial intelligence," New England Journal of Medicine, vol. 385, no. 3, pp. 283-286, 2021.
+
+[15] G. W. Brier, "Verification of forecasts expressed in terms of probability," Monthly Weather Review, vol. 78, no. 1, pp. 1-3, 1950.
+
+[16] A. Niculescu-Mizil and R. Caruana, "Predicting good probabilities with supervised learning," in Proc. ICML, 2005, pp. 625-632.
+
+[17] B. Van Calster et al., "Calibration: The Achilles heel of predictive analytics," BMC Medicine, vol. 17, Art. no. 230, 2019.
+
+[18] A. J. Vickers and E. B. Elkin, "Decision curve analysis: A novel method for evaluating prediction models," Medical Decision Making, vol. 26, no. 6, pp. 565-574, 2006.
+
+[19] R. F. Wolff et al., "PROBAST: A tool to assess the risk of bias and applicability of prediction model studies," Annals of Internal Medicine, vol. 170, no. 1, pp. 51-58, 2019.
+
+[20] X. Liu et al., "Reporting guidelines for clinical trial reports for interventions involving artificial intelligence: The CONSORT-AI extension," Nature Medicine, vol. 26, pp. 1364-1374, 2020.
+
+[21] S. C. Rivera et al., "Guidelines for clinical trial protocols for interventions involving artificial intelligence: The SPIRIT-AI extension," Nature Medicine, vol. 26, pp. 1351-1363, 2020.
+
+[22] B. Vasey et al., "Reporting guideline for the early-stage clinical evaluation of decision support systems driven by artificial intelligence: DECIDE-AI," Nature Medicine, vol. 28, pp. 924-933, 2022.
+
+[23] F. Nan, J. Wang, and V. Saligrama, "Feature-budgeted random forest," in Proc. ICML, 2015, pp. 1983-1991.
+
+[24] M. Kachuee, K. Karkkainen, O. Goldstein, et al., "Cost-sensitive diagnosis and learning leveraging public health data," arXiv:1902.07102, 2019.
+
+[25] P. Viola and M. Jones, "Rapid object detection using a boosted cascade of simple features," in Proc. IEEE CVPR, 2001.
+
+[26] C. K. Chow, "On optimum recognition error and reject tradeoff," IEEE Transactions on Information Theory, vol. 16, no. 1, pp. 41-46, 1970.
+
+[27] R. El-Yaniv and Y. Wiener, "On the foundations of noise-free selective classification," Journal of Machine Learning Research, vol. 11, pp. 1605-1641, 2010.
+
+[28] Y. Geifman and R. El-Yaniv, "Selective classification for deep neural networks," arXiv:1705.08500, 2017.
+
+[29] D. Madras, T. Pitassi, and R. Zemel, "Predict responsibly: Improving fairness and accuracy by learning to defer," in Proc. NeurIPS, 2018, pp. 6150-6160.
+
+[30] H. Mozannar and D. Sontag, "Consistent estimators for learning to defer to an expert," in Proc. AISTATS, PMLR, vol. 108, 2020, pp. 707-717.
+
+[31] J. A. C. Sterne et al., "Multiple imputation for missing data in epidemiological and clinical research: Potential and pitfalls," BMJ, vol. 338, Art. no. b2393, 2009.
+
+[32] L. Breiman, "Random forests," Machine Learning, vol. 45, pp. 5-32, 2001.
+
+[33] S. M. Lundberg and S.-I. Lee, "A unified approach to interpreting model predictions," in Proc. NeurIPS, 2017, pp. 4765-4774.
+
+[34] S. Tonekaboni, S. Joshi, M. D. McCradden, and A. Goldenberg, "What clinicians want: Contextualizing explainable machine learning for clinical end use," in Proc. Machine Learning for Healthcare, PMLR, vol. 106, 2019, pp. 359-380.
+
+[35] Z. Obermeyer, B. Powers, C. Vogeli, and S. Mullainathan, "Dissecting racial bias in an algorithm used to manage the health of populations," Science, vol. 366, no. 6464, pp. 447-453, 2019.
+
+[36] U.S. Food and Drug Administration, "Clinical Decision Support Software: Guidance for Industry and Food and Drug Administration Staff," Final Guidance, Sep. 2022. Available: https://www.fda.gov/regulatory-information/search-fda-guidance-documents/clinical-decision-support-software
+
+[37] Council of Scientific and Industrial Research, "About CSIR," official website. Available: https://www.csir.res.in/en/about-us/about-csir
+
+[38] Council of Scientific and Industrial Research, "Vision & Mission," official website. Available: https://www.csir.res.in/en/vision-mission
+
+[39] Council of Scientific and Industrial Research, "CSIR Network Map," official website. Available: https://www.csir.res.in/en/about-us/csir-network-map
+
+[40] Central Scientific Instruments Organisation, public institutional summary. Available: https://en.wikipedia.org/wiki/Central_Scientific_Instruments_Organisation
+
+[41] K. Singhal et al., "Large language models encode clinical knowledge," Nature, vol. 620, pp. 172-180, 2023.
+
+[42] Z. Ji et al., "Survey of hallucination in natural language generation," ACM Computing Surveys, vol. 55, no. 12, Art. no. 248, 2023.
+
+[43] C. Guo, G. Pleiss, Y. Sun, and K. Q. Weinberger, "On calibration of modern neural networks," in Proc. ICML, 2017, pp. 1321-1330.
+
+[44] A. P. Bradley, "The use of the area under the ROC curve in the evaluation of machine learning algorithms," Pattern Recognition, vol. 30, no. 7, pp. 1145-1159, 1997.
+
+[45] D. Chicco and G. Jurman, "The advantages of the Matthews correlation coefficient over F1 score and accuracy in binary classification evaluation," BMC Genomics, vol. 21, Art. no. 6, 2020.
+
+---
+
+## Appendix A: Feature List
+
+### A.1 Tier 1 Features
+
+```text
+age
+gender_Female
+gender_Male
+cp_asymptomatic
+cp_atypical angina
+cp_non-anginal
+cp_typical angina
+trestbps
+```
+
+### A.2 Tier 2 Features
+
+```text
+age, trestbps, chol, thalch, oldpeak, ca_missing, chol_missing_or_zero,
+oldpeak_missing, cp_asymptomatic, cp_atypical angina, cp_non-anginal,
+cp_typical angina, gender_Female, gender_Male, ca_-1.0, ca_0.0,
+ca_1.0, ca_2.0, ca_3.0, restecg_-1.0, restecg_0.0, restecg_1.0,
+restecg_2.0, fbs_-1.0, fbs_0.0, fbs_1.0, exang_-1.0, exang_0.0,
+exang_1.0, slope_-1.0, slope_0.0, slope_1.0, slope_2.0,
+thal_-1.0, thal_0.0, thal_1.0, thal_2.0
+```
+
+## Appendix B: Hyperparameters
+
+| Model | Hyperparameters |
+|---|---|
+| Tier 1 Random Forest | `n_estimators=600`, `max_depth=4`, `min_samples_split=2`, `random_state=43` |
+| Tier 2 Random Forest `rf_best` | `n_estimators=200`, `max_depth=12`, `min_samples_split=10`, `random_state=7` |
+| Tier 2 Random Forest `rf_current` | `n_estimators=1000`, `max_depth=5`, `min_samples_split=10`, `random_state=43` |
+| Tier 2 Logistic Regression | `max_iter=5000` |
+| Tier 2 KNN | `n_neighbors=7` |
+| Voting ensemble | `voting="soft"` |
+| Iterative imputer | `random_state=43`, `max_iter=15` |
+| Train-test split | `test_size=0.2`, `stratify=Y`, `random_state=43` |
+
+## Appendix C: Additional Results
+
+| Model | Matrix `[[TN, FP], [FN, TP]]` |
+|---|---|
+| Tier 1 only | `[[58, 24], [15, 87]]` |
+| Tier 2 full profile | `[[68, 14], [4, 98]]` |
+| Conservative cascade | `[[68, 14], [5, 97]]` |
+| Uncertainty-band policy | `[[62, 20], [5, 97]]` |
+
+## Appendix D: Code Snippets
+
 ```python
-cat_imputer = SimpleImputer(strategy='constant', fill_value=-1)
+Y = (uci_dataset["target"] > 0).astype(int)
 ```
-When subsequently passed to `OneHotEncoder(sparse_output=False, handle_unknown='ignore')`, missing categorical values generate dedicated explicit indicator columns (e.g., `ca_-1.0`, `thal_-1.0`).
 
-For continuous features (`age`, `trestbps`, `chol`, `thalch`, `oldpeak`), physiological zero entries in serum cholesterol (`chol == 0`, present in 172 records) were converted to `np.nan`. Explicit binary missingness indicators were generated:
 ```python
-ca_missing = (ca == -1)
-chol_missing_or_zero = np.isnan(chol)
-oldpeak_missing = np.isnan(oldpeak)
-```
-Continuous imputation was executed using scikit-learn's Multivariate Imputation by Chained Equations (`IterativeImputer(random_state=43, max_iter=15)`) fitted strictly on the training partition. All continuous features were scaled into $[0, 1]$ using `MinMaxScaler`.
-
-### 4.4 Feature Space Partitioning: Tier 1 Intake Space vs. Tier 2 Diagnostic Space
-
-The resulting 37-dimensional design matrix $\Phi(X_{\mathrm{raw}}) \in \mathbb{R}^{37}$ was divided into two clinical workflow tiers:
-
-```
-========================================================================================
-TABLE 4.2: COMPLETE FEATURE PARTITIONING BETWEEN TIER 1 INTAKE AND TIER 2 DIAGNOSTIC SPACE
-========================================================================================
-Tier Category      Dimensionality    Included Physiological & Clinical Variables
-----------------------------------------------------------------------------------------
-Tier 1: Intake     8 Features        - Scaled Age (continuous)
-Subspace (X1)                        - Gender Indicators: gender_Female, gender_Male
-                                     - Chest Pain One-Hot: cp_asymptomatic, cp_atypical,
-                                       cp_non-anginal, cp_typical
-                                     - Scaled Resting Blood Pressure (trestbps)
-----------------------------------------------------------------------------------------
-Tier 2: Diagnostic 37 Features       - Complete Tier 1 Intake Vector (8 features)
-Subspace (X2)      (Full Profile)    - Laboratory Assays: Scaled Cholesterol, Fasting
-                                       Blood Sugar indicators (fbs_-1, fbs_0, fbs_1)
-                                     - Electrophysiology: restecg (-1, 0, 1, 2),
-                                       Scaled Max Heart Rate (thalch), Exercise Angina
-                                     - Stress & Angiography: ST Depression (oldpeak),
-                                       Slope indicators, Fluoroscopic Vessels (ca_0 to 3),
-                                       Thalassemia categories (thal_-1 to 2)
-                                     - Explicit Missingness Flags: ca_missing,
-                                       chol_missing_or_zero, oldpeak_missing
-========================================================================================
+categorical_imputer = SimpleImputer(strategy="constant", fill_value=-1)
 ```
 
-### 4.5 Tier 1 Shallow Random Forest Gatekeeper Architecture
-
-The Tier 1 Gatekeeper ($f_1: \mathbb{R}^8 \to [0, 1]$) was engineered as a regularized Random Forest classifier:
 ```python
-tier1_model = RandomForestClassifier(
-    n_estimators=600,
-    max_depth=4,
-    min_samples_split=2,
-    random_state=43
-)
+def build_tier1_model() -> RandomForestClassifier:
+    return RandomForestClassifier(
+        n_estimators=600,
+        max_depth=4,
+        min_samples_split=2,
+        random_state=43,
+    )
 ```
-Tree depth was explicitly bounded at `max_depth=4` to prevent high-variance decision trees from overfitting on low-dimensional basic vitals, ensuring smooth posterior risk surfaces across primary triage inputs.
 
-### 4.6 Tier 2 Heterogeneous Soft-Voting Diagnostic Ensemble Architecture
-
-The Tier 2 Diagnostic Model ($f_2: \mathbb{R}^{37} \to [0, 1]$) was engineered as a heterogeneous soft-voting ensemble (`VotingClassifier(voting='soft')`) combining four functionally diverse estimators:
-1. **`rf_best`:** `RandomForestClassifier(n_estimators=200, max_depth=12, min_samples_split=10, random_state=7)` — Captures deep non-linear feature interactions.
-2. **`rf_current`:** `RandomForestClassifier(n_estimators=1000, max_depth=5, min_samples_split=10, random_state=43)` — Provides regularized broad ensemble consensus.
-3. **`logreg`:** `LogisticRegression(max_iter=5000)` — Enforces stable linear hyperplanes across correlated blood assays.
-4. **`knn7`:** `KNeighborsClassifier(n_neighbors=7)` — Incorporates local non-parametric instance similarity across patient clusters.
-
-By averaging soft predicted probability distributions across linear parametric, tree-ensemble, and instance-based architectures, the voting classifier mitigates single-model variance across multi-site datasets.
-
-### 4.7 Triage Routing Policies and Mathematical Gate Formulation
-
-Let $p_1 = f_1(X_1) \in [0, 1]$ represent the gatekeeper posterior probability. The system establishes lower and upper triage thresholds:
-$$\theta_L = 0.30, \qquad \theta_H = 0.70.$$
-
-Two routing policies were mathematically formalized:
-
-#### A. Conservative Application Policy ($r_{\mathrm{app}}$ — Deployed in `app.py`)
-Designed for emergency safety, where all patients with intermediate or high risk undergo complete laboratory testing before diagnostic sign-off:
-$$r_{\mathrm{app}}(p_1) = \begin{cases} \text{Stop at Tier 1 (Safe Discharge Review / Avoid Tier 2)}, & \text{if } p_1 \le \theta_L \; (0.30), \\ \text{Request Complete Tier 2 Diagnostic Profile}, & \text{if } p_1 > \theta_L \; (0.30). \end{cases}$$
-
-#### B. Uncertainty-Band Policy ($r_{\mathrm{band}}$ — Cost-First Ablation)
-Designed for theoretical resource maximization, where both confidently low-risk and confidently high-risk patients bypass Tier 2 testing:
-$$r_{\mathrm{band}}(p_1) = \begin{cases} \text{Low-Risk Bypass (Avoid Tier 2)}, & \text{if } p_1 \le \theta_L \; (0.30), \\ \text{Request Complete Tier 2 Diagnostic Profile}, & \text{if } \theta_L < p_1 < \theta_H, \\ \text{High-Risk Escalation Bypass (Avoid Tier 2)}, & \text{if } p_1 \ge \theta_H \; (0.70). \end{cases}$$
-
-To quantify resource stewardship without assigning arbitrary monetary costs, the primary efficiency metric is **Tier 2 Profile Avoidance ($A_{T2}$)**:
-$$A_{T2} = \frac{N - N_{T2}}{N} \times 100\%,$$
-where $N_{T2}$ is the count of patients routed to undergo Tier 2 evaluation.
-
-### 4.8 Evaluation Framework: Cross-Validation, DCA, Calibration, and Safety Accounting
-
-To audit performance across both held-out and cross-validated settings, `publication_evaluation.py` implements:
-- **Exhaustive Discrimination Accounting:** Computes Accuracy, Balanced Accuracy, Sensitivity ($\frac{\mathrm{TP}}{\mathrm{TP}+\mathrm{FN}}$), Specificity ($\frac{\mathrm{TN}}{\mathrm{TN}+\mathrm{FP}}$), Matthews Correlation Coefficient ($\mathrm{MCC}$), F1-score, and AUROC.
-- **Bypass Safety Accounting:** For patients bypassing Tier 2 ($p_1 \le \theta_L$), computes Bypass Negative Predictive Value ($\mathrm{NPV} = \frac{\mathrm{TN}_{\mathrm{bypass}}}{\mathrm{TN}_{\mathrm{bypass}} + \mathrm{FN}_{\mathrm{bypass}}}$) and total Missed Positive cases ($\mathrm{FN}_{\mathrm{bypass}}$).
-- **Decision Curve Analysis (DCA):** Computes Vickers Net Benefit across threshold probabilities $p_t \in [0.05, 0.50]$:
-  $$\mathrm{NB}(p_t) = \frac{\mathrm{TP}}{N} - \frac{\mathrm{FP}}{N}\left(\frac{p_t}{1-p_t}\right).$$
-- **Probability Calibration Audit:** Evaluates Expected Calibration Error across $K=10$ equal-width probability bins:
-  $$\mathrm{ECE} = \sum_{k=1}^{K} \frac{|B_k|}{N} \left| \bar{p}_k - \bar{y}_k \right|,$$
-  where $\bar{p}_k$ is mean predicted probability and $\bar{y}_k$ is empirical prevalence in bin $B_k$.
-
----
-
-## CHAPTER 5: IMPLEMENTATION AND INTERFACE
-
-### 5.1 Object-Oriented Backend Engineering (`ModelHandler` and Pipeline Encapsulation)
-The backend architecture is encapsulated inside `Model_handler_final.py` through the object-oriented `ModelHandler` class. Upon initialization, `ModelHandler` verifies the local filesystem for pre-compiled binary model artifacts (`Tier_1_model.pkl`, `Tier_2_model.pkl`). If artifacts are missing, it automatically invokes `Data_Processing_final.py`, executes training across the 736-record training split, logs model convergence, and persists serialized weights.
-
-### 5.2 Offline Evaluation Engine Engineering (`publication_evaluation.py`)
-To ensure publication reproducibility without polluting deployed dashboard code, `publication_evaluation.py` was constructed as an offline auditing suite. It loads `x_train_tier1`, `x_test_tier1`, `x_train_tier2`, and `x_test_tier2` and exports comprehensive publication CSV tables (`heldout_performance.csv`, `bypass_safety.csv`, `threshold_sweep.csv`, `decision_curve.csv`, `heldout_subgroup_and_site_metrics.csv`) accompanied by a cryptographic JSON manifest (`manifest.json`).
-
-### 5.3 Local SHAP Attribution Engine and LLM Translation Layer
-When a patient undergoes Tier 2 evaluation, `Ai_explainer_shap.py` and `app.py` instantiate a permutation-based Shapley explainer around the soft-voting ensemble:
 ```python
-explainer = shap.Explainer(predict_positive, background_data, algorithm="permutation")
-```
-Local additive attributions $\phi_i(x)$ are extracted such that $\sum_{i=1}^{37} \phi_i(x) = f_2(x) - \phi_0$. The top risk-raising ($\phi_i > 0$) and protective ($\phi_i < 0$) features are structured into a constrained prompt submitted to `google/gemini-2.5-flash` via OpenRouter. To guarantee robustness against API downtime, a deterministic local rule-based fallback generator produces standardized clinical notes whenever network latency exceeds timeout thresholds.
-
-### 5.4 Interactive Streamlit Clinical Decision Support Dashboard Architecture
-The clinician dashboard (`app.py`, 1,844 lines) implements the four-stage triage workflow:
-
-```
-+-----------------------------------------------------------------------------------+
-|                        SMART CLINIC ASSISTANT DASHBOARD                           |
-|       [ STAGED TRIAGE INTAKE ] -> [ GATEKEEPER DECISION ] -> [ WORKUP ]           |
-+-----------------------------------------------------------------------------------+
-|  TIER 1 INTAKE VITALS:                        TRIAGE ROUTING GATE OUTPUT:         |
-|  - Patient Age: [ 58 ]                        +---------------------------------+ |
-|  - Biological Sex: [ Male ]                   | TIER 1 POSTERIOR RISK: 24.1%    | |
-|  - Chest Pain: [ Asymptomatic ]               | STATUS: LOW-RISK CANDIDATE      | |
-|  - Resting BP: [ 135 mmHg ]                   | RECOMMENDATION: DISCHARGE REVIEW| |
-|  [ RUN INITIAL TRIAGE GATE ]                  +---------------------------------+ |
-+-----------------------------------------------------------------------------------+
-
-Figure 5.1: Streamlit Dashboard Architecture: Stage 1 Intake Form and Tier 1 Gatekeeper Card.
+def conservative_cascade(p1, p2):
+    bypass = p1 <= LOW_THRESHOLD
+    score = np.where(bypass, p1, p2)
+    pred = np.where(bypass, as_binary(p1), as_binary(p2))
+    return pred, score, bypass
 ```
 
-### 5.5 Reactive UI State Machine and Dynamic Diagnostic Workup Unlocking
-When $p_1 > 0.30$, Streamlit automatically unlocks Stage 3 (Diagnostic Workup Input) and Stage 4 (Deep Explainability Dashboard).
+## Appendix E: Screenshots
 
-```
-+-----------------------------------------------------------------------------------+
-|                   TIER 2 DIAGNOSTIC & EXPLAINABILITY WORKSPACE                    |
-+-----------------------------------------------------------------------------------+
-|  SHAP ATTRIBUTION IMPACT BARS:                CLINICIAN DRAFT NOTE (LLM):         |
-|  Fluoroscopic Vessels (ca=2) [ +0.185 ] (RED) +---------------------------------+ |
-|  Thalassemia: Reversable     [ +0.142 ] (RED) | [! CLINICIAN REVIEW MANDATORY ] | |
-|  Max Heart Rate (145 bpm)    [ -0.064 ] (GRN) | The patient shows elevated risk | |
-|  Resting ECG: Normal         [ -0.032 ] (GRN) | driven by multi-vessel narrowing| |
-|                                               | and reversable defect...        | |
-|  [ DOWNLOAD PDF REPORT ]                      +---------------------------------+ |
-+-----------------------------------------------------------------------------------+
+The repository does not contain current screenshot image files. Screenshots should be captured after launching `streamlit run app.py`.
 
-Figure 5.2: Streamlit Dashboard Architecture: Dynamic Tier 2 Laboratory Panel and Explanation Workspace.
-```
+<!-- Figure:
+Tier 1 Intake Screen
+Source:
+TODO: Capture from running Streamlit app.
+-->
 
----
+<!-- Figure:
+Tier 2 SHAP Dashboard
+Source:
+TODO: Capture from running Streamlit app.
+-->
 
-## CHAPTER 6: RESULTS AND ANALYSIS
+## Appendix F: User Manual
 
-### 6.1 Primary Generalization Benchmark: Stratified 5-Fold Cross-Validation
+Start the application with:
 
-To ensure methodological rigor and avoid single-split optimism, the primary generalization benchmark was evaluated across the complete 920-record dataset via stratified 5-fold cross-validation:
-
-```
-========================================================================================
-TABLE 6.1: PRIMARY STRATIFIED 5-FOLD CROSS-VALIDATION GENERALIZATION PERFORMANCE (N=920)
-========================================================================================
-Model / Routing Policy             Mean Accuracy     Mean AUROC      Tier 2 Avoided
-----------------------------------------------------------------------------------------
-Tier 1 Gatekeeper Only            77.7% ± 2.7%      0.843 ± 0.036         --
-Tier 2 Full Diagnostic Profile    84.3% ± 1.8%      0.904 ± 0.035        0.0%
-Conservative Cascade (App Policy) 84.5% ± 2.2%      0.898 ± 0.034       25.1% ± 3.3%
-Uncertainty-Band Policy           82.6% ± 2.6%      0.854 ± 0.042       72.4% ± 2.5%
-========================================================================================
+```text
+streamlit run app.py
 ```
 
-Under 5-fold cross-validation, the deployed **Conservative Cascade** achieved an accuracy of **84.5% ± 2.2%** and an AUROC of **0.898 ± 0.034**, statistically matching the full Tier 2 model ($84.3\% \pm 1.8\%$) while avoiding **25.1% ± 3.3%** of complete Tier 2 diagnostic workups.
+Enter Tier 1 vitals, run initial triage, review the route, enter Tier 2 diagnostics if activated, run final diagnosis, and inspect risk, SHAP factors, and the draft note. The output is clinical decision support only and must not be treated as a diagnosis.
 
-### 6.2 Development Split Performance Benchmark ($N=184$)
+## Appendix G: Installation Guide
 
-```
-========================================================================================
-TABLE 6.2: HELD-OUT DEVELOPMENT SPLIT BENCHMARK ACROSS STANDALONE AND CASCADES (N=184)
-========================================================================================
-Model or Policy             Acc.    Bal.Acc. Sens.   Spec.   MCC    AUROC   Brier  FER
-----------------------------------------------------------------------------------------
-Tier 1 Only                 0.788   0.780    0.853   0.707  0.569   0.844   0.153  --
-Tier 2 Full Profile         0.902   0.895    0.961   0.829  0.805   0.920   0.107  0.0%
-Conservative Cascade        0.897   0.890    0.951   0.829  0.793   0.922   --    24.5%
-Uncertainty-Band Policy     0.864   0.854    0.951   0.756  0.730   0.874   --    66.8%
-========================================================================================
+```text
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+streamlit run app.py
 ```
 
-On the fixed 184-record held-out development split, exact McNemar paired testing between the full Tier 2 model and Conservative Cascade yielded $p=1.000$ (1 discordant case). In formal reporting, **84.5%** serves as the definitive CV generalization estimate, while **89.7%** represents the held-out development check.
+For optional LLM output, set `open_router_api_key` or `OPENROUTER_API_KEY`. If no key is configured, the app uses a deterministic local note.
 
-### 6.3 Resource Stewardship and Tier 2 Profile Avoidance Analysis
+The current workspace listing does not include `Tier_1_model.pkl` or `Tier_2_model.pkl`. They can be generated by running:
 
-The deployed Conservative Cascade ($\theta_L=0.30$) consistently avoided **25.1%** of diagnostic profiles across cross-validation folds. In hospital operational terms, routing one quarter of presenting emergency patients to immediate safe discharge review without ordering downstream biochemical assays or nuclear imaging represents substantial stewardship of diagnostic capacity.
-
-### 6.4 Clinical Bypass Safety Audit and Low-Threshold Sensitivity Sweep
-
-To audit the safety of the pragmatic $\theta_L=0.30$ discharge threshold, an exhaustive threshold-sweep accounting audit was executed on the held-out split:
-
-```
-========================================================================================
-TABLE 6.3: HELD-OUT LOW-THRESHOLD SWEEP AND BYPASS SAFETY ACCOUNTING (N=184)
-========================================================================================
-Low Threshold (θL)  Tier 2 Avoided   Bypass Count (N)  Bypassed Positives  Missed Pos.
-----------------------------------------------------------------------------------------
-0.05                    1.1%                2                  0                0
-0.10                    4.9%                9                  0                0
-0.15                    9.8%               18                  0                0
-0.20                   15.8%               29                  1                1
-0.25                   22.3%               41                  3                3
-0.30 (Deployed App)    24.5%               45                  4                4
-0.40                   30.4%               56                  8                8
-0.50                   39.7%               73                 15               15
-========================================================================================
+```text
+python Model_handler_final.py
 ```
 
-At the deployed **0.30 threshold**, 45 patients bypassed Tier 2 testing. Crucially, **4 of these 45 patients were true positive cases**, resulting in a bypass Negative Predictive Value (NPV) of **91.1%**. In emergency cardiac triage, a 91.1% NPV is clinically unsafe as an autonomous discharge rule. Achieving **zero missed positive cases (100% NPV)** on this held-out cohort requires lowering the threshold to **`0.15`**, which reduces profile avoidance from 24.5% to **9.8%**. This empirical trade-off proves why heuristic probability thresholds cannot be deployed autonomously without clinical utility calibration.
+## Appendix H: Project Folder Structure
 
-### 6.5 Probability Calibration Audit and Reliability Diagram Analysis
-
-```
-       Observed
-          1.0 +--------------------------------------------------*--+
-              |                                               *-/   |
-          0.8 |                                            *-/      |
-              |                                         *-/         |
-          0.6 |                                      *-/            |
-              |                           *-------*--               |
-          0.4 |                        *-/                          |
-              |              *------*-/   Raw Tier 1 Curve          |
-          0.2 |        *----/                                       |
-              |  *----/                                             |
-          0.0 +--*--------------------------------------------------+
-              0.0                   0.5                             1.0
-                                 Predicted Probability
-
-Figure 6.2: Probability Calibration Reliability Histogram: Raw vs. Isotonic Calibrated Tier 1 Probabilities.
-```
-
-Probability calibration auditing revealed that raw Tier 1 probabilities exhibited an expected calibration error (ECE-10) of `0.052` (Brier score `0.153`). Applying 5-fold Isotonic Regression slightly improved ECE-10 to `0.048` but degraded Brier score (`0.157`) and AUROC (`0.840`) on small held-out splits. Consequently, raw probabilities were retained for application routing while underscoring that prospective calibration against clinical utility cost matrices is mandatory.
-
-### 6.6 Decision Curve Analysis (Net Benefit Evaluation)
-
-```
-       Net Benefit
-         0.55 +-------------Tier 2 / Cascade-----------------------+
-              |           /---**                                   |
-         0.45 |         /----   ***---                             |
-              |       /--             ***--                        |
-         0.35 |     /--                    ***---   Treat All      |
-              |   /--                            ***--             |
-         0.25 | /--                                   ***--        |
-              |/                                           ***     |
-         0.00 +-----------------------------------------------****-+ Treat None
-             0.05           0.15           0.25           0.35           0.45
-                                 Threshold Probability (pt)
-
-Figure 6.1: Decision Curve Analysis (DCA): Net Benefit vs. Clinical Threshold Probability.
+```text
+CSIO Project Version 2.0/
+|-- Ai_explainer_shap.py
+|-- app.py
+|-- claude_verdict.md
+|-- codex_verdict.md
+|-- data_preprocessing.py
+|-- Data_Processing_final.py
+|-- Final Version reseacrh Paper.pdf
+|-- gemini_verdict.md
+|-- heart_disease_uci.csv
+|-- Model_handler_final.py
+|-- model_handler.py
+|-- overleaf.md
+|-- pdf_generator.py
+|-- phase.md
+|-- project_analysis.md
+|-- Project_Report.md
+|-- publication_evaluation.py
+|-- readme.md
+|-- requirements.txt
 ```
 
-Decision Curve Analysis (DCA) confirmed that both the full Tier 2 model and the Conservative Cascade achieved superior net benefit across clinical threshold probabilities $p_t \in [0.05, 0.45]$ compared to default treat-all and treat-none strategies.
-
-### 6.7 Institutional Generalizability Audit: Leave-One-Site-Out (LOSO) Stress Testing
-
-To test whether high random-split accuracy masked vulnerability to institutional shift across hospitals, **Leave-One-Site-Out (LOSO)** cross-validation was executed across the four source medical centers:
-
-```
-========================================================================================
-TABLE 6.4: LEAVE-ONE-SITE-OUT (LOSO) STRESS TESTING AND MAJORITY-CLASS BASELINE COMPARISON
-========================================================================================
-Held-Out Hospital Cohort     Records (N) Prevalence Maj.Base Acc.  Sens.  Spec.  MCC
-----------------------------------------------------------------------------------------
-Cleveland Clinic (USA)          304        0.457      0.543  0.783  0.820  0.752  0.570
-Hungarian Institute             293        0.362      0.638  0.799  0.896  0.743  0.615
-Switzerland Hospital            123        0.935      0.935  0.813  0.826  0.625  0.276
-VA Long Beach Medical Center    200        0.745      0.745  0.730  0.779  0.588  0.344
-----------------------------------------------------------------------------------------
-Pooled LOSO Total               920        0.553      0.553  0.780  0.825  0.725  0.554
-========================================================================================
-```
-
-The LOSO stress test revealed a critical scientific finding: pooled generalizability accuracy fell from $84.5\%$ (random CV) to **78.0%**. Most alarmingly, at the two high-prevalence sites—**Switzerland (93.5% prevalence)** and **VA Long Beach (74.5% prevalence)**—the conservative cascade achieved accuracies of **81.3%** and **73.0%**, respectively, falling **below trivial institutional majority-class rules** ($93.5\%$ and $74.5\%$). This audit proves that institutional shift and base-rate imbalance profoundly degrade uncalibrated clinical classifiers.
-
-### 6.8 Exploratory Subgroup Fairness Audit across Biological Sex and Age Bands
-
-```
-========================================================================================
-TABLE 6.5: EXPLORATORY HELD-OUT SUBGROUP AUDIT DISAGGREGATED BY BIOLOGICAL SEX AND AGE
-========================================================================================
-Subgroup Cohort        Records (N) Prevalence  Accuracy  Sensitivity  Specificity  MCC
-----------------------------------------------------------------------------------------
-Female Subgroup            38        0.263      0.974       0.900        1.000    0.932
-Male Subgroup             146        0.630      0.877       0.957        0.741    0.734
-Age < 50 Years             49        0.388      0.959       0.895        1.000    0.916
-Age 50 - 65 Years         115        0.609      0.887       0.971        0.756    0.765
-Age > 65 Years             20        0.650      0.800       0.923        0.571    0.545
-========================================================================================
-```
-
-Exploratory subgroup auditing showed lower specificity (`0.571`) and MCC (`0.545`) in elderly patients ($>65$ years). Because subgroup sample sizes ($N=38$ females, $N=20$ elderly) are severely underpowered, these results are reported strictly for scientific transparency rather than claiming demographic fairness.
-
-### 6.9 End-to-End Deep Explainability and Draft Generative Output Walkthrough
-
-When a high-risk patient is evaluated, `app.py` renders local SHAP attributions alongside the following structured draft summary:
-
-> **[! CLINICIAN REVIEW MANDATORY: DRAFT AI COMMUNICATION SUMMARY ONLY ]**  
-> **Clinical Risk Profile Summary:** The patient presents with an elevated probability of cardiovascular disease ($p_2 = 0.842$).  
-> **Dominant Attributions:** Risk is driven predominantly by multi-vessel fluoroscopic narrowing (`ca=2`, $\phi=+0.185$) and reversable thalassemia defect (`thal=2`, $\phi=+0.142$), partially mitigated by normal resting ECG (`restecg=0`, $\phi=-0.032$).  
-> **Recommendation:** Advise cardiology consult for formal angiographic correlation. This note is unvalidated draft assistance and must be verified by the attending clinician.
-
----
-
-## CHAPTER 7: CONCLUSION AND FUTURE WORK
-
-### 7.1 Summary of Engineering and Methodological Contributions
-
-During this six-week research internship at **CSIR-CSIO**, **Smart Clinic Assistant** successfully demonstrated the feasibility of resource-aware staged feature acquisition for cardiovascular triage. The project delivered:
-1. A leakage-controlled Python preprocessing pipeline enforcing TRIPOD+AI partitioning, non-colliding categorical sentinel imputation (`-1`), and MICE continuous imputation.
-2. An auditable two-tier ensemble architecture achieving **84.5% ± 2.2% cross-validated accuracy** and **0.898 ± 0.034 AUROC** while avoiding **25.1% ± 3.3% of complete diagnostic profiles**.
-3. A rigorous post-hoc auditing framework exposing the clinical limitations of uncalibrated thresholds, revealing that the pragmatic **0.30 threshold** bypasses positive cases (91.1% NPV) and that multi-site LOSO accuracy drops to **78.0%**.
-4. An interactive Streamlit decision support interface coupling permutation SHAP attributions with draft LLM communication notes.
-
-### 7.2 Rigorous Accounting of Methodological and Clinical Limitations
-
-To maintain absolute institutional honesty, the following limitations preclude deployment readiness:
-- **Retrospective Public Data:** The analysis relies on a retrospective 920-record dataset originating from 1988 with significant inter-hospital prevalence shift.
-- **Unsafe Pragmatic Thresholds:** The 0.30 bypass threshold missed 4 positive cases among 45 held-out patients; achieving 100% NPV required lowering the threshold to 0.15, reducing profile avoidance to 9.8%.
-- **Unvalidated Generative AI:** Generated clinical summaries were not formally evaluated by clinician panels for faithfulness, readability, or hallucination rates.
-- **Underpowered Subgroups:** Small subgroup sample sizes ($N=20$ for age $>65$, $N=38$ for females) prevent conclusive demographic fairness claims.
-
-### 7.3 Roadmap for Clinical Integration and Future Scope at CSIR-CSIO
-
-Prior to prospective clinical integration, future work at **CSIR-CSIO** must address four technical milestones:
-1. **Utility-Optimized Threshold Calibration:** Deriving routing gates from formal clinical cost-loss matrices rather than heuristic probability bands.
-2. **Prospective Multi-Center External Validation:** Conducting external validation on modern EMR cohorts across geographically diverse Indian medical institutes.
-3. **Formal Blinded LLM Clinical Scoring:** Executing structured Likert-scale audits evaluating generated clinical text against clinician gold-standard notes.
-4. **On-Premise Privacy & EMR Governance:** Replacing third-party public API endpoints with secure, locally deployed open-weight medical language models adhering to hospital HIPAA/DISHA data governance.
-
----
-
-## REFERENCES
-
-1. A. Janosi, W. Steinbrunn, M. Pfisterer, and R. Detrano, "Heart Disease," *UCI Machine Learning Repository*, 1988, doi: 10.24432/C52P4X.
-2. R. Detrano *et al.*, "International application of a new probability algorithm for the diagnosis of coronary artery disease," *American Journal of Cardiology*, vol. 64, no. 5, pp. 304–310, 1989.
-3. S. Raman *et al.*, "Machine learning for coronary heart disease prediction: Comparative analysis of Framingham and Cleveland subset of the UCI dataset with SHAP-based interpretability," *Epidemiologia*, vol. 7, no. 3, Art. no. 75, 2026.
-4. G. S. Collins *et al.*, "TRIPOD+AI statement: Updated guidance for reporting clinical prediction models that use regression or machine learning methods," *BMJ*, vol. 385, Art. no. e078378, 2024.
-5. S. G. Finlayson *et al.*, "The clinician and dataset shift in artificial intelligence," *New England Journal of Medicine*, vol. 385, no. 3, pp. 283–286, 2021.
-6. A. J. Vickers and E. B. Elkin, "Decision curve analysis: A novel method for evaluating prediction models," *Medical Decision Making*, vol. 26, no. 6, pp. 565–574, 2006.
-7. S. M. Lundberg and S.-I. Lee, "A unified approach to interpreting model predictions," in *Proc. Advances in Neural Information Processing Systems (NeurIPS)*, 2017, pp. 4765–4774.
-8. S. Tonekaboni *et al.*, "What clinicians want: Contextualizing explainable machine learning for clinical end use," in *Proc. Machine Learning for Healthcare (ML4H)*, PMLR, 2019, pp. 359–380.
-9. B. Kompa, J. Snoek, and A. L. Beam, "Second opinion needed: communicating uncertainty in medical machine learning," *npj Digital Medicine*, vol. 4, Art. no. 4, 2021.
-10. K. Singhal *et al.*, "Large language models encode clinical knowledge," *Nature*, vol. 620, pp. 172–180, 2023.
-11. Z. Ji *et al.*, "Survey of hallucination in natural language generation," *ACM Computing Surveys*, vol. 55, no. 12, Art. no. 248, 2023.
-12. U.S. Food and Drug Administration, "Clinical Decision Support Software: Guidance for Industry and Food and Drug Administration Staff," Final Guidance, Sep. 2022.
-13. P. Viola and M. Jones, "Rapid object detection using a boosted cascade of simple features," in *Proc. IEEE Computer Society Conference on Computer Vision and Pattern Recognition (CVPR)*, 2001.
-14. R. Mozannar and D. Sontag, "Consistent estimators for learning to defer to an expert," in *Proc. International Conference on Machine Learning (ICML)*, PMLR, 2020, pp. 7076–7087.
-15. C. Guo, G. Pleiss, Y. Sun, and K. Q. Weinberger, "On calibration of modern neural networks," in *Proc. International Conference on Machine Learning (ICML)*, PMLR, 2017, pp. 1321–1330.
-
-</div>
+Note: Generated model files and publication output CSVs are expected artifacts but are not present in the current root listing unless created by running the relevant scripts.
